@@ -1,30 +1,53 @@
 /**
  * Deliberately small, hand-tuned rule set for common Indian bank/card debit
- * alerts and OTT receipt emails. This is NOT a general-purpose bank-email
- * parser -- it's a starting draft that will need tuning against whatever
- * actually lands in the user's inbox. Every rule is best-effort; unmatched
- * or amount-less emails are skipped (never inserted as junk), and anything
- * that does match still lands in the pending review queue rather than being
- * auto-confirmed. Extend RULES incrementally as new formats show up.
+ * alerts and OTT/grocery/food-delivery receipt emails. This is NOT a
+ * general-purpose bank-email parser -- it's a starting draft that will need
+ * tuning against whatever actually lands in the user's inbox. Every rule is
+ * best-effort; unmatched or amount-less emails are skipped (never inserted as
+ * junk), and anything that does match still lands in the pending review queue
+ * rather than being auto-confirmed. Extend RULES incrementally as new formats
+ * show up.
+ *
+ * Note: UPI purchases can show up twice -- once as a bank debit alert (via
+ * generic-bank-alert / UPI rule below) and once as a merchant's own receipt
+ * (e.g. Zomato/Swiggy/Blinkit) for the same real-world payment. These land as
+ * two separate pending rows since dedupe is per-email, not per-transaction --
+ * reject the duplicate in the review queue.
  */
 
 const AMOUNT_RE = /(?:Rs\.?|INR|₹)\s?([\d,]+(?:\.\d{1,2})?)/i;
 
+// Matches "at MERCHANT", "to MERCHANT", or "UPI/MERCHANT" / "UPI-MERCHANT" style references.
+const GENERIC_MERCHANT_REGEXES = [
+  /(?:at|to)\s+([A-Z0-9@ &.\-]{3,40})/i,
+  /UPI[\/\-]([A-Za-z0-9@ &.\-]{3,40})/i
+];
+
 const RULES = [
-  { id: "hdfc-debit", senderPattern: /@hdfcbank\.net$/i, merchantRegex: /(?:at|to)\s+([A-Z0-9 &.\-]{3,40})/i, categoryHint: "creditcard" },
-  { id: "icici-cc", senderPattern: /@icicibank\.com$/i, merchantRegex: /at\s+([A-Z0-9 &.\-]{3,40})\s+on/i, categoryHint: "creditcard" },
-  { id: "axis-alert", senderPattern: /@axisbank\.com$/i, merchantRegex: /(?:at|to)\s+([A-Z0-9 &.\-]{3,40})/i, categoryHint: "creditcard" },
-  { id: "kotak-alert", senderPattern: /@kotak\.com$/i, merchantRegex: /(?:at|to)\s+([A-Z0-9 &.\-]{3,40})/i, categoryHint: "creditcard" },
-  { id: "sbicard-alert", senderPattern: /@sbicard\.com$/i, merchantRegex: /at\s+([A-Z0-9 &.\-]{3,40})/i, categoryHint: "creditcard" },
-  { id: "generic-bank-alert", subjectOrBodyPattern: /debited|spent|transaction alert|withdrawn/i, merchantRegex: /(?:at|to)\s+([A-Z0-9 &.\-]{3,40})/i, categoryHint: "creditcard" },
+  { id: "hdfc-debit", senderPattern: /@hdfcbank\.net$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
+  { id: "icici-cc", senderPattern: /@icicibank\.com$/i, merchantRegex: [/at\s+([A-Z0-9 &.\-]{3,40})\s+on/i, ...GENERIC_MERCHANT_REGEXES], categoryHint: "creditcard" },
+  { id: "axis-alert", senderPattern: /@axisbank\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
+  { id: "kotak-alert", senderPattern: /@kotak\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
+  { id: "sbicard-alert", senderPattern: /@sbicard\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
+  {
+    id: "generic-bank-alert",
+    subjectOrBodyPattern: /debited|spent|transaction alert|withdrawn|UPI|paid|payment of|txn of/i,
+    merchantRegex: GENERIC_MERCHANT_REGEXES,
+    categoryHint: "creditcard"
+  },
   { id: "netflix-receipt", senderPattern: /@netflix\.com$/i, categoryHint: "ott" },
   { id: "spotify-receipt", senderPattern: /@spotify\.com$/i, categoryHint: "ott" },
   { id: "hotstar-receipt", senderPattern: /@hotstar\.com$/i, categoryHint: "ott" },
-  { id: "prime-receipt", senderPattern: /@amazon\.in$/i, subjectOrBodyPattern: /prime|subscription/i, categoryHint: "ott" }
+  { id: "prime-receipt", senderPattern: /@amazon\.in$/i, subjectOrBodyPattern: /prime|subscription/i, categoryHint: "ott" },
+  { id: "zomato-receipt", senderPattern: /@zomato\.com$/i, categoryHint: "food" },
+  { id: "swiggy-receipt", senderPattern: /@swiggy\.in$/i, categoryHint: "food" },
+  { id: "blinkit-receipt", senderPattern: /@blinkit\.com$/i, categoryHint: "groceries" },
+  { id: "grofers-receipt", senderPattern: /@grofers\.com$/i, categoryHint: "groceries" }
 ];
 
 const KEYWORD_CATEGORY_MAP = [
-  { pattern: /bigbasket|zepto|blinkit|grocer|dmart|reliance fresh/i, category: "groceries" },
+  { pattern: /bigbasket|zepto|blinkit|grofers|grocer|dmart|reliance fresh/i, category: "groceries" },
+  { pattern: /zomato|swiggy|eatsure|foodpanda|faasos|dominos|domino's/i, category: "food" },
   { pattern: /irctc|makemytrip|indigo|uber|ola|airport|hotel|goibibo|redbus/i, category: "travel" },
   { pattern: /netflix|spotify|prime video|hotstar|youtube premium|apple music/i, category: "ott" }
 ];
@@ -47,6 +70,19 @@ function refineCategory(text, fallback) {
   return fallback;
 }
 
+function extractMerchant(regexes, body) {
+  if (!regexes || !body) return "";
+  const list = Array.isArray(regexes) ? regexes : [regexes];
+  for (const re of list) {
+    const m = re.exec(body);
+    if (m) {
+      const group = m.slice(1).find((g) => g);
+      if (group) return group.trim();
+    }
+  }
+  return "";
+}
+
 /**
  * @param {{fromAddress: string, subject: string, body: string, dateHeader: string}} email
  * @returns {{amount: number, category: string, note: string, date: string, snippet: string} | null}
@@ -60,11 +96,7 @@ function parseEmail(email) {
   const amount = parseFloat(amountMatch[1].replace(/,/g, ""));
   if (!amount || amount <= 0) return null;
 
-  let merchant = "";
-  if (rule.merchantRegex) {
-    const m = rule.merchantRegex.exec(email.body || "");
-    if (m) merchant = m[1].trim();
-  }
+  const merchant = extractMerchant(rule.merchantRegex, email.body || "");
 
   const category = refineCategory(`${email.subject || ""} ${merchant}`, rule.categoryHint);
   const date = email.dateHeader ? new Date(email.dateHeader).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
@@ -82,6 +114,7 @@ function parseEmail(email) {
 const GMAIL_SEARCH_QUERY =
   '(from:hdfcbank.net OR from:icicibank.com OR from:axisbank.com OR from:kotak.com OR ' +
   'from:sbicard.com OR from:netflix.com OR from:spotify.com OR from:hotstar.com OR ' +
-  'subject:(debited OR "transaction alert" OR spent OR withdrawn))';
+  'from:zomato.com OR from:swiggy.in OR from:blinkit.com OR from:grofers.com OR ' +
+  'subject:(debited OR "transaction alert" OR spent OR withdrawn OR UPI OR "payment of"))';
 
 module.exports = { parseEmail, GMAIL_SEARCH_QUERY, RULES, KEYWORD_CATEGORY_MAP };
