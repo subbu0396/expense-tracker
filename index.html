@@ -15,6 +15,7 @@
     --accent-ink:     #ffffff;
     --danger:         #c9463f;
     --danger-wash:    rgba(201,70,63,0.10);
+    --good:           #0a8f0a;
 
     --cat-travel:     #2a78d6;
     --cat-creditcard: #eb6834;
@@ -42,6 +43,7 @@
       --accent-ink:     #ffffff;
       --danger:         #e66761;
       --danger-wash:    rgba(230,103,97,0.14);
+      --good:           #1fb31f;
 
       --cat-travel:     #3987e5;
       --cat-creditcard: #d95926;
@@ -341,6 +343,51 @@
     padding: 20px 0;
   }
 
+  /* ---------- Trend card ---------- */
+  .trend-card { margin-top: 20px; }
+  .trend-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+  }
+  .trend-head h2 { margin: 0; }
+  .trend-stats { display: flex; gap: 18px; font-size: 12px; color: var(--ink-muted); }
+  .trend-stats b { color: var(--ink-primary); font-weight: 700; }
+  .trend-wrap { position: relative; margin-top: 10px; }
+  .trend-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .trend-gridline { stroke: var(--gridline); stroke-width: 1; }
+  .trend-axis-label { fill: var(--ink-muted); font-size: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .trend-month-label { fill: var(--ink-muted); font-size: 10px; }
+  .trend-area { fill: url(#trendFill); }
+  .trend-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .trend-dot { fill: var(--surface-card); stroke: var(--accent); stroke-width: 2; }
+  .trend-dot.end { fill: var(--accent); }
+  .trend-hit { fill: transparent; cursor: crosshair; }
+  .trend-crosshair { stroke: var(--baseline); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0; pointer-events: none; }
+  .trend-hover-dot { fill: var(--accent); stroke: var(--surface-card); stroke-width: 2; opacity: 0; pointer-events: none; }
+  .trend-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    opacity: 0;
+    transform: translate(-50%, -100%);
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .trend-tooltip .tt-month { font-weight: 700; margin-bottom: 2px; }
+  .trend-tooltip .tt-amt { color: var(--ink-secondary); }
+  .trend-tooltip .tt-delta { margin-left: 6px; }
+  .trend-tooltip .tt-delta.up { color: var(--danger); }
+  .trend-tooltip .tt-delta.down { color: var(--good); }
+
   /* ---------- Ledger table ---------- */
   .ledger-card { margin-top: 20px; }
   .ledger-head {
@@ -484,6 +531,14 @@
       <h2>Breakdown by category</h2>
       <div class="breakdown-body" id="breakdownBody"></div>
     </div>
+  </div>
+
+  <div class="card trend-card">
+    <div class="trend-head">
+      <h2>Monthly spending trend</h2>
+      <div class="trend-stats" id="trendStats"></div>
+    </div>
+    <div class="trend-wrap" id="trendWrap"></div>
   </div>
 
   <div class="card ledger-card">
@@ -739,6 +794,180 @@
     });
   }
 
+  function fmtCompact(n) {
+    if (Math.abs(n) >= 100000) return "₹" + (n / 100000).toFixed(n % 100000 === 0 ? 0 : 1) + "L";
+    if (Math.abs(n) >= 1000) return "₹" + (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + "k";
+    return "₹" + Math.round(n);
+  }
+
+  function monthShortLabel(key) {
+    var parts = key.split("-");
+    var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
+    return d.toLocaleDateString(undefined, { month: "short" });
+  }
+
+  function addMonths(key, n) {
+    var parts = key.split("-");
+    var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1 + n, 1);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+
+  function getMonthlySeries() {
+    if (state.expenses.length === 0) return [];
+    var totals = {};
+    state.expenses.forEach(function (x) {
+      var k = monthKey(x.date);
+      totals[k] = (totals[k] || 0) + x.amount;
+    });
+    var keys = Object.keys(totals).sort();
+    var minKey = keys[0];
+    var maxKey = keys[keys.length - 1];
+    var currentKey = monthKey(todayISO());
+    if (currentKey > maxKey) maxKey = currentKey;
+
+    var series = [];
+    var k = minKey;
+    var guard = 0;
+    while (k <= maxKey && guard < 600) {
+      series.push({ key: k, label: monthLabel(k), short: monthShortLabel(k), total: totals[k] || 0 });
+      k = addMonths(k, 1);
+      guard++;
+    }
+    if (series.length > 12) series = series.slice(series.length - 12);
+    return series;
+  }
+
+  function renderTrend() {
+    var wrap = document.getElementById("trendWrap");
+    var statsEl = document.getElementById("trendStats");
+    var series = getMonthlySeries();
+
+    if (series.length === 0) {
+      statsEl.innerHTML = "";
+      wrap.innerHTML = '<div class="empty-chart">No expenses yet — add one to start tracking the trend.</div>';
+      return;
+    }
+
+    var maxVal = Math.max.apply(null, series.map(function (s) { return s.total; }));
+    if (maxVal <= 0) maxVal = 1;
+    var avg = series.reduce(function (a, s) { return a + s.total; }, 0) / series.length;
+    var peak = series.reduce(function (a, s) { return s.total > a.total ? s : a; }, series[0]);
+
+    statsEl.innerHTML =
+      '<span>Avg <b class="num">' + fmtMoney(avg) + '</b></span>' +
+      '<span>Highest <b class="num">' + fmtMoney(peak.total) + '</b> · ' + peak.short + '</span>';
+
+    if (series.length === 1) {
+      wrap.innerHTML =
+        '<div class="empty-chart">Only one month of data so far (' + series[0].label + ': ' +
+        fmtMoney(series[0].total) + '). Add more expenses across months to see a trend line.</div>';
+      return;
+    }
+
+    var W = 640, H = 220;
+    var marginLeft = 54, marginRight = 12, marginTop = 16, marginBottom = 28;
+    var plotW = W - marginLeft - marginRight;
+    var plotH = H - marginTop - marginBottom;
+    var n = series.length;
+
+    function xAt(i) { return marginLeft + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW); }
+    function yAt(v) { return marginTop + plotH - (v / maxVal) * plotH; }
+
+    var linePts = series.map(function (s, i) { return xAt(i) + "," + yAt(s.total); }).join(" L ");
+    var areaPts = "M " + xAt(0) + "," + yAt(0) + " L " + linePts +
+      " L " + xAt(n - 1) + "," + (marginTop + plotH) + " L " + xAt(0) + "," + (marginTop + plotH) + " Z";
+
+    var gridHtml = [0, 0.5, 1].map(function (t) {
+      var y = marginTop + plotH * (1 - t);
+      var val = maxVal * t;
+      return (
+        '<line class="trend-gridline" x1="' + marginLeft + '" y1="' + y + '" x2="' + (W - marginRight) + '" y2="' + y + '"></line>' +
+        '<text class="trend-axis-label" x="' + (marginLeft - 8) + '" y="' + (y + 3) + '" text-anchor="end">' + fmtCompact(val) + '</text>'
+      );
+    }).join("");
+
+    var xLabelHtml = series.map(function (s, i) {
+      if (n > 8 && i % 2 === 1 && i !== n - 1) return "";
+      return '<text class="trend-month-label" x="' + xAt(i) + '" y="' + (H - 8) + '" text-anchor="middle">' + s.short + '</text>';
+    }).join("");
+
+    var dotsHtml = series.map(function (s, i) {
+      var isEnd = i === n - 1;
+      return '<circle class="trend-dot' + (isEnd ? " end" : "") + '" cx="' + xAt(i) + '" cy="' + yAt(s.total) + '" r="' + (isEnd ? 4 : 3) + '"></circle>';
+    }).join("");
+
+    var hitW = plotW / n;
+    var hitsHtml = series.map(function (s, i) {
+      var hx = marginLeft + i * hitW;
+      return '<rect class="trend-hit" data-i="' + i + '" x="' + hx + '" y="' + marginTop + '" width="' + hitW + '" height="' + plotH + '"></rect>';
+    }).join("");
+
+    wrap.innerHTML =
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" role="img" aria-label="Monthly spending trend line chart">' +
+      '<defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.22"></stop>' +
+      '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"></stop>' +
+      '</linearGradient></defs>' +
+      gridHtml +
+      '<path class="trend-area" d="' + areaPts + '"></path>' +
+      '<path class="trend-line" d="M ' + linePts + '"></path>' +
+      dotsHtml +
+      xLabelHtml +
+      '<line class="trend-crosshair" id="trendCrosshair" y1="' + marginTop + '" y2="' + (marginTop + plotH) + '"></line>' +
+      '<circle class="trend-hover-dot" id="trendHoverDot" r="5"></circle>' +
+      hitsHtml +
+      '</svg>' +
+      '<div class="trend-tooltip" id="trendTooltip"><div class="tt-month"></div><div class="tt-amt num"></div></div>';
+
+    var svgEl = wrap.querySelector("svg");
+    var crosshair = document.getElementById("trendCrosshair");
+    var hoverDot = document.getElementById("trendHoverDot");
+    var tooltip = document.getElementById("trendTooltip");
+
+    function showPoint(i) {
+      var s = series[i];
+      var x = xAt(i), y = yAt(s.total);
+      crosshair.setAttribute("x1", x);
+      crosshair.setAttribute("x2", x);
+      crosshair.style.opacity = 1;
+      hoverDot.setAttribute("cx", x);
+      hoverDot.setAttribute("cy", y);
+      hoverDot.style.opacity = 1;
+
+      var deltaHtml = "";
+      if (i > 0) {
+        var prev = series[i - 1].total;
+        if (prev > 0) {
+          var pct = Math.round(((s.total - prev) / prev) * 100);
+          if (pct !== 0) {
+            deltaHtml = '<span class="tt-delta ' + (pct > 0 ? "up" : "down") + '">' + (pct > 0 ? "↑" : "↓") + " " + Math.abs(pct) + "%</span>";
+          }
+        }
+      }
+      tooltip.querySelector(".tt-month").textContent = s.label;
+      tooltip.querySelector(".tt-amt").innerHTML = fmtMoney(s.total) + deltaHtml;
+
+      var pct2 = svgEl.getBoundingClientRect().width / W;
+      tooltip.style.left = (x * pct2) + "px";
+      tooltip.style.top = (y * pct2 - 10) + "px";
+      tooltip.style.opacity = 1;
+    }
+
+    function hidePoint() {
+      crosshair.style.opacity = 0;
+      hoverDot.style.opacity = 0;
+      tooltip.style.opacity = 0;
+    }
+
+    wrap.querySelectorAll(".trend-hit").forEach(function (hit) {
+      var i = parseInt(hit.getAttribute("data-i"), 10);
+      hit.addEventListener("mouseenter", function () { showPoint(i); });
+      hit.addEventListener("mouseleave", hidePoint);
+      hit.addEventListener("focus", function () { showPoint(i); });
+      hit.addEventListener("blur", hidePoint);
+    });
+  }
+
   function renderChips() {
     var chips = document.getElementById("chips");
     var html = '<button class="chip' + (state.activeCategory === "all" ? " active" : "") + '" data-cat="all">All</button>';
@@ -827,6 +1056,7 @@
     renderMonthSelect();
     renderHeader();
     renderBreakdown(filteredForMonth(state.activeMonth));
+    renderTrend();
     renderChips();
     renderLedger();
   }
