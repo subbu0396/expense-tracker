@@ -57,11 +57,15 @@ const RULES = [
   { id: "zomato-receipt", senderPattern: /@zomato\.com$/i, categoryHint: "food" },
   { id: "swiggy-receipt", senderPattern: /@swiggy\.in$/i, categoryHint: "food" },
   { id: "blinkit-receipt", senderPattern: /@blinkit\.com$/i, categoryHint: "groceries" },
-  { id: "grofers-receipt", senderPattern: /@grofers\.com$/i, categoryHint: "groceries" }
+  { id: "grofers-receipt", senderPattern: /@grofers\.com$/i, categoryHint: "groceries" },
+  { id: "bigbasket-receipt", senderPattern: /@bigbasket\.com$/i, categoryHint: "groceries" }
 ];
 
+// "BBNOW" is BigBasket's own quick-commerce brand name, and shows up as the
+// merchant text in bank alerts far more often than the literal word
+// "bigbasket" -- match both so it lands in Groceries, not Food Orders.
 const KEYWORD_CATEGORY_MAP = [
-  { pattern: /bigbasket|zepto|blinkit|grofers|grocer|dmart|reliance fresh/i, category: "groceries" },
+  { pattern: /bigbasket|\bbb ?now\b|zepto|blinkit|grofers|grocer|dmart|reliance fresh/i, category: "groceries" },
   { pattern: /zomato|swiggy|eatsure|foodpanda|faasos|dominos|domino's/i, category: "food" },
   { pattern: /irctc|makemytrip|indigo|uber|ola|airport|hotel|goibibo|redbus/i, category: "travel" },
   { pattern: /netflix|spotify|prime video|hotstar|youtube premium|apple music/i, category: "ott" }
@@ -162,7 +166,7 @@ function parseEmail(email) {
 const GMAIL_SEARCH_QUERY =
   '(from:hdfcbank.net OR from:icicibank.com OR from:axisbank.com OR from:kotak.com OR ' +
   'from:sbicard.com OR from:netflix.com OR from:spotify.com OR from:hotstar.com OR ' +
-  'from:zomato.com OR from:swiggy.in OR from:blinkit.com OR from:grofers.com OR ' +
+  'from:zomato.com OR from:swiggy.in OR from:blinkit.com OR from:grofers.com OR from:bigbasket.com OR ' +
   'subject:(debited OR "transaction alert" OR spent OR withdrawn OR "UPI txn" OR "UPI transaction"))';
 
 module.exports = { parseEmail, GMAIL_SEARCH_QUERY, RULES, KEYWORD_CATEGORY_MAP };
