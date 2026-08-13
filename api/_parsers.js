@@ -83,9 +83,11 @@ function refineCategory(text, fallback) {
 // or too short to be a real merchant name (these were showing up from support
 // phone numbers in email footers matching the generic "to X" pattern).
 function looksLikeJunkMerchant(text) {
-  const digitsOnly = text.replace(/[\s\-]/g, "");
+  const trimmed = text.trim();
+  const digitsOnly = trimmed.replace(/[\s\-]/g, "");
   if (/^\d{6,}$/.test(digitsOnly)) return true; // phone numbers, account/card numbers
-  if (text.trim().length < 3) return true;
+  if (/^\d{6,}/.test(trimmed)) return true; // starts with a long digit run (e.g. "7308080808. We accept...")
+  if (trimmed.length < 3) return true;
   return false;
 }
 
