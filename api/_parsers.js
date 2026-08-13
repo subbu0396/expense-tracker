@@ -17,6 +17,11 @@
 
 const AMOUNT_RE = /(?:Rs\.?|INR|₹)\s?([\d,]+(?:\.\d{1,2})?)/i;
 
+// UPI bank alerts usually name the registered business in parens, e.g.
+// "towards VPA foo@bank (MUNCHMART TECHNOLOGIES PRIVATE LIMITED)" -- try this
+// first since it's the highest-precision signal available.
+const PAREN_MERCHANT_RE = /\(([A-Z][A-Z0-9 &.,'\-]{2,49})\)/;
+
 // Matches "at MERCHANT", "to MERCHANT", or "UPI/MERCHANT" / "UPI-MERCHANT" style references.
 const GENERIC_MERCHANT_REGEXES = [
   /(?:at|to)\s+([A-Z0-9@ &.\-]{3,40})/i,
@@ -30,8 +35,12 @@ const RULES = [
   { id: "kotak-alert", senderPattern: /@kotak\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
   { id: "sbicard-alert", senderPattern: /@sbicard\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
   {
+    // Deliberately does NOT match on bare "paid"/"payment of"/"txn of" -- those
+    // words show up in plenty of non-transaction mail (delivery status updates,
+    // marketing) and produced false positives with fabricated-looking amounts.
+    // Stick to phrasing that's specific to an actual bank debit/UPI alert.
     id: "generic-bank-alert",
-    subjectOrBodyPattern: /debited|spent|transaction alert|withdrawn|UPI|paid|payment of|txn of/i,
+    subjectOrBodyPattern: /debited|spent|transaction alert|withdrawn|UPI (?:txn|Ref|transaction)/i,
     merchantRegex: GENERIC_MERCHANT_REGEXES,
     categoryHint: "creditcard"
   },
@@ -70,14 +79,31 @@ function refineCategory(text, fallback) {
   return fallback;
 }
 
+// Rejects captures that are just a phone number, a masked account/card number,
+// or too short to be a real merchant name (these were showing up from support
+// phone numbers in email footers matching the generic "to X" pattern).
+function looksLikeJunkMerchant(text) {
+  const digitsOnly = text.replace(/[\s\-]/g, "");
+  if (/^\d{6,}$/.test(digitsOnly)) return true; // phone numbers, account/card numbers
+  if (text.trim().length < 3) return true;
+  return false;
+}
+
 function extractMerchant(regexes, body) {
-  if (!regexes || !body) return "";
+  if (!body) return "";
+
+  const parenMatch = PAREN_MERCHANT_RE.exec(body);
+  if (parenMatch && !looksLikeJunkMerchant(parenMatch[1])) {
+    return parenMatch[1].trim();
+  }
+
+  if (!regexes) return "";
   const list = Array.isArray(regexes) ? regexes : [regexes];
   for (const re of list) {
     const m = re.exec(body);
     if (m) {
       const group = m.slice(1).find((g) => g);
-      if (group) return group.trim();
+      if (group && !looksLikeJunkMerchant(group)) return group.trim();
     }
   }
   return "";
@@ -115,6 +141,6 @@ const GMAIL_SEARCH_QUERY =
   '(from:hdfcbank.net OR from:icicibank.com OR from:axisbank.com OR from:kotak.com OR ' +
   'from:sbicard.com OR from:netflix.com OR from:spotify.com OR from:hotstar.com OR ' +
   'from:zomato.com OR from:swiggy.in OR from:blinkit.com OR from:grofers.com OR ' +
-  'subject:(debited OR "transaction alert" OR spent OR withdrawn OR UPI OR "payment of"))';
+  'subject:(debited OR "transaction alert" OR spent OR withdrawn OR "UPI txn" OR "UPI transaction"))';
 
 module.exports = { parseEmail, GMAIL_SEARCH_QUERY, RULES, KEYWORD_CATEGORY_MAP };
