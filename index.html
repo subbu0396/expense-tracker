@@ -214,7 +214,9 @@
 
   /* ---------- Pending review ---------- */
   .pending-card { margin-top: 20px; }
-  .pending-card h2 { display: flex; align-items: center; gap: 8px; }
+  .pending-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .pending-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; }
+  #confirmAllBtn { padding: 6px 12px; font-size: 12px; }
   .pending-count {
     background: var(--cat-ott-wash);
     color: var(--cat-ott);
@@ -223,7 +225,7 @@
     padding: 1px 7px;
     border-radius: 999px;
   }
-  .pending-hint { font-size: 12px; color: var(--ink-muted); margin: -8px 0 14px; }
+  .pending-hint { font-size: 12px; color: var(--ink-muted); margin: 0 0 14px; }
   .pending-row {
     display: grid;
     grid-template-columns: auto auto 1fr auto auto auto;
@@ -636,7 +638,10 @@
   </div>
 
   <div class="card pending-card" id="pendingCard" hidden>
-    <h2>Pending review <span class="pending-count" id="pendingCount">0</span></h2>
+    <div class="pending-head">
+      <h2>Pending review <span class="pending-count" id="pendingCount">0</span></h2>
+      <button type="button" class="gmail-btn" id="confirmAllBtn">Confirm all</button>
+    </div>
     <div class="pending-hint">Parsed from Gmail — check the category and amount before these count toward your totals.</div>
     <div id="pendingList"></div>
   </div>
@@ -1253,6 +1258,34 @@
     connectBtn.hidden = state.gmailConnected;
     syncBtn.hidden = !state.gmailConnected;
   }
+
+  // ---------- confirm all pending ----------
+  var confirmAllBtn = document.getElementById("confirmAllBtn");
+  confirmAllBtn.addEventListener("click", function () {
+    var rows = document.querySelectorAll("#pendingList .pending-row");
+    if (!rows.length) return;
+
+    confirmAllBtn.disabled = true;
+    confirmAllBtn.textContent = "Confirming…";
+
+    var requests = Array.prototype.map.call(rows, function (row) {
+      var id = row.getAttribute("data-id");
+      var category = row.querySelector(".p-cat").value;
+      return api("/api/expenses/" + id, { method: "PATCH", body: JSON.stringify({ status: "confirmed", category: category }) });
+    });
+
+    Promise.all(requests)
+      .then(function () { return Promise.all([fetchExpenses(), fetchPending()]); })
+      .then(function () {
+        render();
+        showToast("Confirmed " + requests.length + " transaction" + (requests.length === 1 ? "" : "s"));
+      })
+      .catch(function (err) { showToast("Couldn't confirm all: " + err.message); })
+      .finally(function () {
+        confirmAllBtn.disabled = false;
+        confirmAllBtn.textContent = "Confirm all";
+      });
+  });
 
   function handleGmailRedirectParam() {
     var params = new URLSearchParams(window.location.search);
