@@ -1,6 +1,6 @@
 const { sql } = require("../_db");
 
-const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food"];
+const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food", "upidebit"];
 
 function getId(req) {
   if (req.query && req.query.id) return req.query.id;

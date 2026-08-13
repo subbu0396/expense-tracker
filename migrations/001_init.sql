@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS expenses (
   id                TEXT PRIMARY KEY,
   amount            NUMERIC(12,2) NOT NULL,
-  category          TEXT NOT NULL CHECK (category IN ('travel','creditcard','groceries','ott','food')),
+  category          TEXT NOT NULL CHECK (category IN ('travel','creditcard','groceries','ott','food','upidebit')),
   note              TEXT NOT NULL DEFAULT '',
   date              DATE NOT NULL,
   source            TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','gmail')),

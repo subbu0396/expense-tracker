@@ -1,6 +1,6 @@
 const { sql } = require("../_db");
 
-const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food"];
+const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food", "upidebit"];
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

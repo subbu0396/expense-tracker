@@ -28,11 +28,16 @@ const GENERIC_MERCHANT_REGEXES = [
   /UPI[\/\-]([A-Za-z0-9@ &.\-]{3,40})/i
 ];
 
+// SBI Card only ever issues credit cards, so its alerts are unambiguous.
+// Every other bank sender mixes debit-card/UPI/savings-account alerts with
+// occasional actual credit-card alerts, so those get categoryHint "upidebit"
+// as the default and dynamicCardCategory:true lets detectCardCategory()
+// upgrade individual emails to "creditcard" when the body explicitly says so.
 const RULES = [
-  { id: "hdfc-debit", senderPattern: /@hdfcbank\.net$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
-  { id: "icici-cc", senderPattern: /@icicibank\.com$/i, merchantRegex: [/at\s+([A-Z0-9 &.\-]{3,40})\s+on/i, ...GENERIC_MERCHANT_REGEXES], categoryHint: "creditcard" },
-  { id: "axis-alert", senderPattern: /@axisbank\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
-  { id: "kotak-alert", senderPattern: /@kotak\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
+  { id: "hdfc-debit", senderPattern: /@hdfcbank\.net$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "upidebit", dynamicCardCategory: true },
+  { id: "icici-alert", senderPattern: /@icicibank\.com$/i, merchantRegex: [/at\s+([A-Z0-9 &.\-]{3,40})\s+on/i, ...GENERIC_MERCHANT_REGEXES], categoryHint: "upidebit", dynamicCardCategory: true },
+  { id: "axis-alert", senderPattern: /@axisbank\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "upidebit", dynamicCardCategory: true },
+  { id: "kotak-alert", senderPattern: /@kotak\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "upidebit", dynamicCardCategory: true },
   { id: "sbicard-alert", senderPattern: /@sbicard\.com$/i, merchantRegex: GENERIC_MERCHANT_REGEXES, categoryHint: "creditcard" },
   {
     // Deliberately does NOT match on bare "paid"/"payment of"/"txn of" -- those
@@ -42,7 +47,8 @@ const RULES = [
     id: "generic-bank-alert",
     subjectOrBodyPattern: /debited|spent|transaction alert|withdrawn|UPI (?:txn|Ref|transaction)/i,
     merchantRegex: GENERIC_MERCHANT_REGEXES,
-    categoryHint: "creditcard"
+    categoryHint: "upidebit",
+    dynamicCardCategory: true
   },
   { id: "netflix-receipt", senderPattern: /@netflix\.com$/i, categoryHint: "ott" },
   { id: "spotify-receipt", senderPattern: /@spotify\.com$/i, categoryHint: "ott" },
@@ -77,6 +83,16 @@ function refineCategory(text, fallback) {
     if (kw.pattern.test(text)) return kw.category;
   }
   return fallback;
+}
+
+// Distinguishes an actual credit-card charge from a debit-card/UPI/savings
+// account one, based on phrasing banks actually use in their alert emails.
+// Returns null (meaning: use the rule's static categoryHint) when neither
+// signal is present.
+function detectCardCategory(body) {
+  if (/credit card/i.test(body)) return "creditcard";
+  if (/debit card|UPI|savings a\/?c|towards a\/?c|account (?:ending|no)/i.test(body)) return "upidebit";
+  return null;
 }
 
 // Rejects captures that are just a phone number, a masked account/card number,
@@ -126,7 +142,11 @@ function parseEmail(email) {
 
   const merchant = extractMerchant(rule.merchantRegex, email.body || "");
 
-  const category = refineCategory(`${email.subject || ""} ${merchant}`, rule.categoryHint);
+  let categoryHint = rule.categoryHint;
+  if (rule.dynamicCardCategory) {
+    categoryHint = detectCardCategory(email.body || "") || categoryHint;
+  }
+  const category = refineCategory(`${email.subject || ""} ${merchant}`, categoryHint);
   const date = email.dateHeader ? new Date(email.dateHeader).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
   const snippet = (email.body || email.subject || "").replace(/\s+/g, " ").trim().slice(0, 200);
 

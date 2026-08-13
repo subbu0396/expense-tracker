@@ -22,12 +22,14 @@
     --cat-groceries:  #1baf7a;
     --cat-ott:        #eda100;
     --cat-food:       #e87ba4;
+    --cat-upidebit:   #4a3aa7;
 
     --cat-travel-wash:     rgba(42,120,214,0.10);
     --cat-creditcard-wash: rgba(235,104,52,0.10);
     --cat-groceries-wash:  rgba(27,175,122,0.10);
     --cat-ott-wash:        rgba(237,161,0,0.10);
     --cat-food-wash:       rgba(232,123,164,0.12);
+    --cat-upidebit-wash:   rgba(74,58,167,0.10);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -52,12 +54,14 @@
       --cat-groceries:  #199e70;
       --cat-ott:        #c98500;
       --cat-food:       #d55181;
+      --cat-upidebit:   #9085e9;
 
       --cat-travel-wash:     rgba(57,135,229,0.16);
       --cat-creditcard-wash: rgba(217,89,38,0.16);
       --cat-groceries-wash:  rgba(25,158,112,0.16);
       --cat-ott-wash:        rgba(201,133,0,0.16);
       --cat-food-wash:       rgba(213,81,129,0.18);
+      --cat-upidebit-wash:   rgba(144,133,233,0.16);
     }
   }
   :root[data-theme="dark"] {
@@ -82,12 +86,14 @@
     --cat-groceries:  #199e70;
     --cat-ott:        #c98500;
     --cat-food:       #d55181;
+    --cat-upidebit:   #9085e9;
 
     --cat-travel-wash:     rgba(57,135,229,0.16);
     --cat-creditcard-wash: rgba(217,89,38,0.16);
     --cat-groceries-wash:  rgba(25,158,112,0.16);
     --cat-ott-wash:        rgba(201,133,0,0.16);
     --cat-food-wash:       rgba(213,81,129,0.18);
+    --cat-upidebit-wash:   rgba(144,133,233,0.16);
   }
 
   * { box-sizing: border-box; }
@@ -687,7 +693,8 @@
     { id: "creditcard", label: "Credit Card",  varc: "--cat-creditcard", varw: "--cat-creditcard-wash" },
     { id: "groceries",  label: "Groceries",    varc: "--cat-groceries",  varw: "--cat-groceries-wash" },
     { id: "ott",        label: "OTT Subs",     varc: "--cat-ott",        varw: "--cat-ott-wash" },
-    { id: "food",       label: "Food Orders",  varc: "--cat-food",       varw: "--cat-food-wash" }
+    { id: "food",       label: "Food Orders",  varc: "--cat-food",       varw: "--cat-food-wash" },
+    { id: "upidebit",   label: "UPI / Debit",  varc: "--cat-upidebit",   varw: "--cat-upidebit-wash" }
   ];
   var CAT_BY_ID = {};
   CATEGORIES.forEach(function (c) { CAT_BY_ID[c.id] = c; });
