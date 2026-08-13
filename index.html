@@ -700,9 +700,71 @@
     color: var(--ink-muted);
     text-align: center;
   }
+
+  /* ---------- Login screen ---------- */
+  .login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-page);
+    padding: 24px;
+  }
+  .login-card {
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px 32px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+  }
+  .login-icon { font-size: 38px; margin-bottom: 14px; }
+  .login-card h1 { margin: 0 0 8px; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+  .login-card p { margin: 0 0 26px; font-size: 13px; color: var(--ink-secondary); line-height: 1.5; }
+  .login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .login-btn:hover { filter: brightness(1.06); }
+  .login-fail { margin-top: 14px; font-size: 12px; color: var(--danger); }
+
+  /* ---------- Account menu ---------- */
+  .account-menu { display: flex; align-items: center; gap: 8px; }
+  .account-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--gridline); }
+  .account-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>
 
-<div class="wrap">
+<div class="login-screen" id="loginScreen" hidden>
+  <div class="login-card">
+    <div class="login-icon">🧾</div>
+    <h1>Spend Ledger</h1>
+    <p>Track expenses, auto-import from Gmail, and get push alerts when a category crosses its budget.</p>
+    <button type="button" class="login-btn" id="signInBtn">Sign in with Google</button>
+    <div class="login-fail" id="loginFail" hidden>Sign-in didn't go through — please try again.</div>
+  </div>
+</div>
+
+<div class="wrap" id="appRoot" hidden>
   <div class="ios-banner" id="iosBanner" hidden>
     <span>On iOS, only <b>Safari</b> can install this as an app and receive budget alerts — open this page in Safari, then use <b>Add to Home Screen</b>.</span>
     <button type="button" class="ios-banner-close" id="iosBannerClose" aria-label="Dismiss">✕</button>
@@ -717,6 +779,11 @@
       <button type="button" class="gmail-btn primary" id="connectGmailBtn" hidden>Connect Gmail</button>
       <button type="button" class="gmail-btn" id="syncNowBtn" hidden><span class="dot-status"></span>Sync now</button>
       <select class="month-select" id="monthSelect" aria-label="Select period"></select>
+      <div class="account-menu" id="accountMenu" hidden>
+        <img class="account-avatar" id="accountAvatar" alt="">
+        <span class="account-name" id="accountName"></span>
+        <button type="button" class="gmail-btn" id="signOutBtn">Sign out</button>
+      </div>
     </div>
     <div class="hero-total">
       <div class="label">Total spent</div>
@@ -867,6 +934,10 @@
   function api(path, options) {
     return fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options))
       .then(function (r) {
+        if (r.status === 401) {
+          showLoginScreen();
+          throw new Error("session expired");
+        }
         if (!r.ok) return r.json().catch(function () { return {}; }).then(function (body) {
           throw new Error(body.error || ("Request failed: " + r.status));
         });
@@ -1666,21 +1737,71 @@
     });
   })();
 
-  // ---------- bootstrap ----------
-  handleGmailRedirectParam();
+  // ---------- auth: login screen vs app ----------
+  function showLoginScreen() {
+    document.getElementById("appRoot").hidden = true;
+    document.getElementById("loginScreen").hidden = false;
+  }
 
-  Promise.all([fetchExpenses(), fetchPending(), fetchBudgets(), api("/api/auth/status"), checkExistingPushSubscription()])
-    .then(function (results) {
-      state.gmailConnected = !!(results[3] && results[3].connected);
-      updateGmailButtons();
-      updateAlertsButton();
-      render();
-    })
-    .catch(function (err) {
-      showToast("Couldn't load expenses: " + err.message);
-      updateGmailButtons();
-      updateAlertsButton();
-      render();
+  function showAppRoot(user) {
+    document.getElementById("loginScreen").hidden = true;
+    document.getElementById("appRoot").hidden = false;
+
+    var menu = document.getElementById("accountMenu");
+    var avatar = document.getElementById("accountAvatar");
+    var name = document.getElementById("accountName");
+    if (user.pictureUrl) { avatar.src = user.pictureUrl; avatar.style.display = ""; } else { avatar.style.display = "none"; }
+    name.textContent = user.name || user.email;
+    menu.hidden = false;
+  }
+
+  document.getElementById("signInBtn").addEventListener("click", function () {
+    window.location.href = "/api/auth/login/start";
+  });
+
+  document.getElementById("signOutBtn").addEventListener("click", function () {
+    fetch("/api/auth/logout", { method: "POST" }).then(function () {
+      window.location.href = "/";
     });
+  });
+
+  function handleLoginFailParam() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("login") === "failed") {
+      document.getElementById("loginFail").hidden = false;
+      params.delete("login");
+      var qs = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+    }
+  }
+
+  // ---------- bootstrap ----------
+  handleLoginFailParam();
+
+  fetch("/api/auth/session").then(function (r) { return r.json(); }).then(function (data) {
+    if (!data.user) {
+      showLoginScreen();
+      return;
+    }
+
+    showAppRoot(data.user);
+    handleGmailRedirectParam();
+
+    Promise.all([fetchExpenses(), fetchPending(), fetchBudgets(), api("/api/auth/status"), checkExistingPushSubscription()])
+      .then(function (results) {
+        state.gmailConnected = !!(results[3] && results[3].connected);
+        updateGmailButtons();
+        updateAlertsButton();
+        render();
+      })
+      .catch(function (err) {
+        showToast("Couldn't load expenses: " + err.message);
+        updateGmailButtons();
+        updateAlertsButton();
+        render();
+      });
+  }).catch(function () {
+    showLoginScreen();
+  });
 })();
 </script>

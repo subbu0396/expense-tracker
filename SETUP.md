@@ -69,3 +69,51 @@ The email-matching rules live in `api/_parsers.js` — a short, explicit list pe
 bank/sender, not a universal parser. After your first real sync, if a bank alert
 you expected didn't show up (or a category guess is consistently wrong), send a
 few example subjects/senders and the rules can be extended.
+
+## 6. Multi-user login (new)
+
+The app now requires signing in with Google before you can see any data — this
+is the first step toward opening it up to other users, each with their own
+private ledger. **Do these steps in order**, since the backfill step below only
+works correctly while you're still the only account in the system.
+
+1. **Google Cloud Console -> Credentials -> your OAuth client** -> add a second
+   **Authorized redirect URI**: `https://expense-tracker-nine-self-90.vercel.app/api/auth/login/callback`
+   (this is separate from the existing Gmail-connect redirect URI — leave that one in place).
+2. **OAuth consent screen -> Test users** -> add a second Google account you
+   control, so we can verify two accounts stay fully isolated from each other
+   before opening this up further.
+3. Vercel -> **Settings -> Environment Variables** -> add `SESSION_SECRET`
+   (value in your local `.env.local`). Redeploy.
+4. Run `migrations/005_multi_tenant.sql` once in Neon's SQL editor (same
+   one-statement-at-a-time note as before if needed).
+5. Open the site — you'll now see a **Sign in with Google** screen. **Sign in
+   with your own primary account first** (important: before the second test
+   account touches the app at all).
+6. While you're still the only signed-up user, run this once in Neon's SQL
+   editor to claim all your existing data (it grabs the one and only user row
+   that exists at this point):
+   ```sql
+   UPDATE expenses SET user_id = (SELECT id FROM users LIMIT 1) WHERE user_id IS NULL;
+   UPDATE budgets SET user_id = (SELECT id FROM users LIMIT 1) WHERE user_id IS NULL;
+   UPDATE push_subscriptions SET user_id = (SELECT id FROM users LIMIT 1) WHERE user_id IS NULL;
+   UPDATE budget_alerts_sent SET user_id = (SELECT id FROM users LIMIT 1) WHERE user_id IS NULL;
+   ```
+7. Refresh the app and confirm all your expenses, budgets, and alert settings
+   are back. *Then* sign in with the second test account (different browser
+   or an incognito window) and confirm it sees a completely empty ledger.
+8. Once that's confirmed, run `migrations/006_enforce_user_id.sql` — this
+   locks in the per-user constraints now that every row has an owner.
+
+Gmail sync itself is **not** part of this step yet — it's still tied to your
+original single account (`oauth_tokens`/`sync_state` are untouched). Per-user
+Gmail connections are a follow-up phase once this login/isolation layer is
+verified solid.
+
+**On going fully public later**: Gmail auto-import uses the sensitive
+`gmail.readonly` scope, so before random members of the public can connect
+Gmail without hitting Google's "unverified app" warning, the OAuth consent
+screen needs to go through Google's app verification review (a privacy policy
+page, an app homepage, and a manual review that can take days to weeks). That
+submission is something only you can do from your Google Cloud account — happy
+to draft the privacy policy page when you're ready for that step.

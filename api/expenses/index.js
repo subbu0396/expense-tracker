@@ -1,5 +1,6 @@
 const { sql } = require("../_db");
 const { checkAndAlert } = require("../_budgetAlerts");
+const { getSessionUser } = require("../_session");
 
 const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food", "upidebit"];
 
@@ -7,7 +8,13 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-async function handleGet(req, res) {
+function unauthorized(res) {
+  res.statusCode = 401;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({ error: "unauthorized" }));
+}
+
+async function handleGet(req, res, userId) {
   const url = new URL(req.url, `https://${req.headers.host}`);
   const status = url.searchParams.get("status");
   const month = url.searchParams.get("month");
@@ -18,7 +25,8 @@ async function handleGet(req, res) {
   const rows = await db`
     SELECT id, amount, category, note, date, source, status, gmail_message_id, raw_snippet
     FROM expenses
-    WHERE (${status}::text IS NULL OR status = ${status})
+    WHERE user_id = ${userId}
+      AND (${status}::text IS NULL OR status = ${status})
       AND (${month}::text IS NULL OR to_char(date, 'YYYY-MM') = ${month})
       AND (${category}::text IS NULL OR category = ${category})
       AND (${q}::text IS NULL OR note ILIKE '%' || ${q} || '%')
@@ -38,7 +46,7 @@ async function handleGet(req, res) {
   }))));
 }
 
-async function handlePost(req, res) {
+async function handlePost(req, res, userId) {
   const body = req.body || {};
   const amount = parseFloat(body.amount);
   const category = body.category;
@@ -52,11 +60,11 @@ async function handlePost(req, res) {
   const id = uid();
   const db = sql();
   await db`
-    INSERT INTO expenses (id, amount, category, note, date, source, status)
-    VALUES (${id}, ${amount}, ${category}, ${note}, ${date}, 'manual', 'confirmed')
+    INSERT INTO expenses (id, amount, category, note, date, source, status, user_id)
+    VALUES (${id}, ${amount}, ${category}, ${note}, ${date}, 'manual', 'confirmed', ${userId})
   `;
 
-  await checkAndAlert(category);
+  await checkAndAlert(userId, category);
 
   res.statusCode = 201;
   res.setHeader("Content-Type", "application/json");
@@ -71,8 +79,11 @@ function badRequest(res, message) {
 
 module.exports = async (req, res) => {
   try {
-    if (req.method === "GET") return await handleGet(req, res);
-    if (req.method === "POST") return await handlePost(req, res);
+    const userId = getSessionUser(req);
+    if (!userId) return unauthorized(res);
+
+    if (req.method === "GET") return await handleGet(req, res, userId);
+    if (req.method === "POST") return await handlePost(req, res, userId);
     res.statusCode = 405;
     res.end("Method not allowed");
   } catch (e) {
