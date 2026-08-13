@@ -78,8 +78,10 @@ private ledger. **Do these steps in order**, since the backfill step below only
 works correctly while you're still the only account in the system.
 
 1. **Google Cloud Console -> Credentials -> your OAuth client** -> add a second
-   **Authorized redirect URI**: `https://expense-tracker-nine-self-90.vercel.app/api/auth/login/callback`
-   (this is separate from the existing Gmail-connect redirect URI — leave that one in place).
+   **Authorized redirect URI**: `https://expense-tracker-nine-self-90.vercel.app/api/auth/login`
+   (this is separate from the existing Gmail-connect redirect URI — leave that one in place;
+   sign-in start and callback share this one URL, distinguished internally by whether
+   Google included a `code` parameter).
 2. **OAuth consent screen -> Test users** -> add a second Google account you
    control, so we can verify two accounts stay fully isolated from each other
    before opening this up further.

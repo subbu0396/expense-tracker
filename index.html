@@ -1510,13 +1510,13 @@
         return navigator.serviceWorker.ready;
       })
       .then(function (reg) {
-        return api("/api/push/public-key").then(function (r) {
+        return api("/api/push").then(function (r) {
           if (!r.publicKey) throw new Error("push isn't configured on the server yet");
           return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(r.publicKey) });
         });
       })
       .then(function (sub) {
-        return api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+        return api("/api/push", { method: "POST", body: JSON.stringify(sub.toJSON()) });
       })
       .then(function () {
         state.pushEnabled = true;
@@ -1756,11 +1756,11 @@
   }
 
   document.getElementById("signInBtn").addEventListener("click", function () {
-    window.location.href = "/api/auth/login/start";
+    window.location.href = "/api/auth/login";
   });
 
   document.getElementById("signOutBtn").addEventListener("click", function () {
-    fetch("/api/auth/logout", { method: "POST" }).then(function () {
+    fetch("/api/auth/me", { method: "DELETE" }).then(function () {
       window.location.href = "/";
     });
   });
@@ -1778,7 +1778,7 @@
   // ---------- bootstrap ----------
   handleLoginFailParam();
 
-  fetch("/api/auth/session").then(function (r) { return r.json(); }).then(function (data) {
+  fetch("/api/auth/me").then(function (r) { return r.json(); }).then(function (data) {
     if (!data.user) {
       showLoginScreen();
       return;
