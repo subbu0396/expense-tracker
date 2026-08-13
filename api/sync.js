@@ -49,14 +49,19 @@ function extractFromAddress(fromHeader) {
   return m ? m[1] : (fromHeader || "");
 }
 
-async function runSync() {
+async function runSync(sinceOverride) {
   const authClient = await getAuthorizedClient();
   const gmail = getGmailClient(authClient);
   const db = sql();
 
-  const stateRows = await db`SELECT last_synced_at FROM sync_state WHERE id = 1`;
-  const lastSyncedAt = stateRows[0] && stateRows[0].last_synced_at;
-  const afterDate = lastSyncedAt ? new Date(lastSyncedAt) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  let afterDate;
+  if (sinceOverride) {
+    afterDate = sinceOverride;
+  } else {
+    const stateRows = await db`SELECT last_synced_at FROM sync_state WHERE id = 1`;
+    const lastSyncedAt = stateRows[0] && stateRows[0].last_synced_at;
+    afterDate = lastSyncedAt ? new Date(lastSyncedAt) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  }
   const afterEpoch = Math.floor(afterDate.getTime() / 1000);
 
   const query = `${GMAIL_SEARCH_QUERY} after:${afterEpoch}`;
@@ -128,7 +133,20 @@ module.exports = async (req, res) => {
       return res.end("Unauthorized");
     }
 
-    const result = await runSync();
+    const url = new URL(req.url, `https://${req.headers.host}`);
+    const sinceParam = url.searchParams.get("since") || (req.body && req.body.since);
+    let sinceOverride = null;
+    if (sinceParam) {
+      const parsed = new Date(sinceParam);
+      if (isNaN(parsed.getTime())) {
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ error: "invalid since date" }));
+      }
+      sinceOverride = parsed;
+    }
+
+    const result = await runSync(sinceOverride);
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(result));
   } catch (e) {
