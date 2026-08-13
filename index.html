@@ -166,6 +166,98 @@
     outline-offset: 2px;
   }
 
+  /* ---------- Gmail connect / sync ---------- */
+  .gmail-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    color: var(--ink-primary);
+    border-radius: 8px;
+    padding: 8px 13px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .gmail-btn:hover { background: var(--surface-page); }
+  .gmail-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .gmail-btn.primary:hover { filter: brightness(1.06); }
+  .gmail-btn[disabled] { opacity: 0.6; cursor: default; }
+  .gmail-btn .dot-status { width: 7px; height: 7px; border-radius: 50%; background: var(--good); flex: none; }
+  .gmail-btn .spin {
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4); border-top-color: currentColor;
+    animation: gmail-spin 0.7s linear infinite;
+  }
+  @keyframes gmail-spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(12px);
+    background: var(--ink-primary);
+    color: var(--surface-page);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.24);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease, transform 160ms ease;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ---------- Pending review ---------- */
+  .pending-card { margin-top: 20px; }
+  .pending-card h2 { display: flex; align-items: center; gap: 8px; }
+  .pending-count {
+    background: var(--cat-ott-wash);
+    color: var(--cat-ott);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+  }
+  .pending-hint { font-size: 12px; color: var(--ink-muted); margin: -8px 0 14px; }
+  .pending-row {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 4px;
+    border-bottom: 1px solid var(--gridline);
+    font-size: 13px;
+  }
+  .pending-row:last-child { border-bottom: none; }
+  .pending-row .p-date { color: var(--ink-secondary); white-space: nowrap; }
+  .pending-row .p-amt { font-weight: 700; }
+  .pending-row .p-note { color: var(--ink-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pending-row select.p-cat {
+    background: var(--surface-page);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .p-confirm, .p-reject {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 11px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .p-confirm { background: var(--good); color: #fff; }
+  .p-confirm:hover { filter: brightness(1.08); }
+  .p-reject { background: transparent; color: var(--ink-muted); border: 1px solid var(--border-strong); }
+  .p-reject:hover { color: var(--danger); background: var(--danger-wash); }
+
   /* ---------- Hero total ---------- */
   .hero-total {
     text-align: right;
@@ -492,6 +584,8 @@
       <h1 id="periodTitle">This month</h1>
     </div>
     <div class="header-controls">
+      <button type="button" class="gmail-btn primary" id="connectGmailBtn" hidden>Connect Gmail</button>
+      <button type="button" class="gmail-btn" id="syncNowBtn" hidden><span class="dot-status"></span>Sync now</button>
       <select class="month-select" id="monthSelect" aria-label="Select period"></select>
     </div>
     <div class="hero-total">
@@ -541,6 +635,12 @@
     <div class="trend-wrap" id="trendWrap"></div>
   </div>
 
+  <div class="card pending-card" id="pendingCard" hidden>
+    <h2>Pending review <span class="pending-count" id="pendingCount">0</span></h2>
+    <div class="pending-hint">Parsed from Gmail — check the category and amount before these count toward your totals.</div>
+    <div id="pendingList"></div>
+  </div>
+
   <div class="card ledger-card">
     <div class="ledger-head">
       <div class="chips" id="chips"></div>
@@ -562,7 +662,8 @@
     </div>
   </div>
 
-  <footer class="hint">Stored locally in this artifact — clear your browser data to reset.</footer>
+  <footer class="hint">Synced with your account — manual entries and Gmail imports both live in the same ledger.</footer>
+  <div class="toast" id="toast"></div>
 </div>
 
 <script>
@@ -577,16 +678,6 @@
   ];
   var CAT_BY_ID = {};
   CATEGORIES.forEach(function (c) { CAT_BY_ID[c.id] = c; });
-
-  var STORAGE_KEY = "spend-ledger-expenses-v1";
-
-  function resolveVar(name) {
-    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-
-  function uid() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  }
 
   function todayISO() {
     var d = new Date();
@@ -617,34 +708,44 @@
     return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   }
 
-  function loadExpenses() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) {}
-    var today = new Date();
-    var y = today.getFullYear(), m = today.getMonth();
-    function d(day) { return new Date(y, m, day).toISOString().slice(0, 10); }
-    return [
-      { id: uid(), amount: 649,   category: "ott",        note: "Netflix",              date: d(2) },
-      { id: uid(), amount: 199,   category: "ott",        note: "Spotify",              date: d(3) },
-      { id: uid(), amount: 3420,  category: "groceries",  note: "Weekly grocery run",   date: d(4) },
-      { id: uid(), amount: 12500, category: "travel",     note: "Flight to Bangalore",  date: d(6) },
-      { id: uid(), amount: 2100,  category: "creditcard", note: "Card minimum due",     date: d(8) },
-      { id: uid(), amount: 1860,  category: "groceries",  note: "BigBasket order",      date: d(11) },
-      { id: uid(), amount: 899,   category: "travel",     note: "Cab rides",            date: d(12) }
-    ];
-  }
-
   var state = {
-    expenses: loadExpenses(),
+    expenses: [],
+    pending: [],
     activeMonth: "all",
     activeCategory: "all",
-    search: ""
+    search: "",
+    gmailConnected: false
   };
 
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.expenses));
+  function api(path, options) {
+    return fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, options))
+      .then(function (r) {
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.error || ("Request failed: " + r.status));
+        });
+        return r.status === 204 ? null : r.json();
+      });
+  }
+
+  function fetchExpenses() {
+    return api("/api/expenses?status=confirmed").then(function (list) {
+      state.expenses = list;
+    });
+  }
+
+  function fetchPending() {
+    return api("/api/expenses?status=pending").then(function (list) {
+      state.pending = list;
+    });
+  }
+
+  var toastTimer = null;
+  function showToast(message) {
+    var el = document.getElementById("toast");
+    el.textContent = message;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 3200);
   }
 
   // ---------- category picker (add form) ----------
@@ -671,16 +772,20 @@
     var cat = catPicker.querySelector('input[name="cat"]:checked').value;
     var note = document.getElementById("noteInput").value.trim();
     var date = document.getElementById("dateInput").value || todayISO();
+    var submitBtn = document.querySelector("#addForm .submit-btn");
 
-    state.expenses.unshift({ id: uid(), amount: amount, category: cat, note: note, date: date });
-    save();
-
-    document.getElementById("amountInput").value = "";
-    document.getElementById("noteInput").value = "";
-    document.getElementById("dateInput").value = todayISO();
-
-    state.activeMonth = monthKey(date);
-    render();
+    submitBtn.disabled = true;
+    api("/api/expenses", { method: "POST", body: JSON.stringify({ amount: amount, category: cat, note: note, date: date }) })
+      .then(function () {
+        document.getElementById("amountInput").value = "";
+        document.getElementById("noteInput").value = "";
+        document.getElementById("dateInput").value = todayISO();
+        state.activeMonth = monthKey(date);
+        return fetchExpenses();
+      })
+      .then(render)
+      .catch(function (err) { showToast("Couldn't add expense: " + err.message); })
+      .finally(function () { submitBtn.disabled = false; });
   });
 
   // ---------- month select ----------
@@ -1020,9 +1125,59 @@
     body.querySelectorAll(".del-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var id = btn.getAttribute("data-id");
-        state.expenses = state.expenses.filter(function (x) { return x.id !== id; });
-        save();
-        render();
+        btn.disabled = true;
+        api("/api/expenses/" + id, { method: "DELETE" })
+          .then(fetchExpenses)
+          .then(render)
+          .catch(function (err) { showToast("Couldn't delete: " + err.message); btn.disabled = false; });
+      });
+    });
+  }
+
+  function renderPending() {
+    var card = document.getElementById("pendingCard");
+    var list = document.getElementById("pendingList");
+    var countEl = document.getElementById("pendingCount");
+
+    if (!state.pending.length) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    countEl.textContent = state.pending.length;
+
+    list.innerHTML = state.pending.map(function (x) {
+      var options = CATEGORIES.map(function (c) {
+        return '<option value="' + c.id + '"' + (c.id === x.category ? " selected" : "") + '>' + c.label + '</option>';
+      }).join("");
+      return (
+        '<div class="pending-row" data-id="' + x.id + '">' +
+        '<span class="p-date">' + fmtDate(x.date) + '</span>' +
+        '<span class="p-amt num">' + fmtMoney(x.amount) + '</span>' +
+        '<span class="p-note" title="' + escapeHtml(x.note || x.snippet || "") + '">' + escapeHtml(x.note || x.snippet || "—") + '</span>' +
+        '<select class="p-cat">' + options + '</select>' +
+        '<button type="button" class="p-confirm">Confirm</button>' +
+        '<button type="button" class="p-reject">Reject</button>' +
+        '</div>'
+      );
+    }).join("");
+
+    list.querySelectorAll(".pending-row").forEach(function (row) {
+      var id = row.getAttribute("data-id");
+      row.querySelector(".p-confirm").addEventListener("click", function (e) {
+        e.target.disabled = true;
+        var category = row.querySelector(".p-cat").value;
+        api("/api/expenses/" + id, { method: "PATCH", body: JSON.stringify({ status: "confirmed", category: category }) })
+          .then(function () { return Promise.all([fetchExpenses(), fetchPending()]); })
+          .then(function () { render(); showToast("Added to your ledger"); })
+          .catch(function (err) { showToast("Couldn't confirm: " + err.message); e.target.disabled = false; });
+      });
+      row.querySelector(".p-reject").addEventListener("click", function (e) {
+        e.target.disabled = true;
+        api("/api/expenses/" + id, { method: "PATCH", body: JSON.stringify({ status: "rejected" }) })
+          .then(fetchPending)
+          .then(renderPending)
+          .catch(function (err) { showToast("Couldn't reject: " + err.message); e.target.disabled = false; });
       });
     });
   }
@@ -1057,10 +1212,78 @@
     renderHeader();
     renderBreakdown(filteredForMonth(state.activeMonth));
     renderTrend();
+    renderPending();
     renderChips();
     renderLedger();
   }
 
-  render();
+  // ---------- Gmail connect / sync ----------
+  var connectBtn = document.getElementById("connectGmailBtn");
+  var syncBtn = document.getElementById("syncNowBtn");
+
+  connectBtn.addEventListener("click", function () {
+    window.location.href = "/api/auth/start";
+  });
+
+  syncBtn.addEventListener("click", function () {
+    syncBtn.disabled = true;
+    syncBtn.innerHTML = '<span class="spin"></span>Syncing…';
+    api("/api/sync", { method: "POST" })
+      .then(function (result) {
+        showToast(result.added > 0 ? ("Found " + result.added + " new transaction" + (result.added === 1 ? "" : "s") + " to review") : "No new transactions found");
+        return fetchPending();
+      })
+      .then(renderPending)
+      .catch(function (err) {
+        if (err.message === "not_connected") {
+          state.gmailConnected = false;
+          updateGmailButtons();
+          showToast("Gmail isn't connected anymore — reconnect to keep syncing");
+        } else {
+          showToast("Sync failed: " + err.message);
+        }
+      })
+      .finally(function () {
+        syncBtn.disabled = false;
+        syncBtn.innerHTML = '<span class="dot-status"></span>Sync now';
+      });
+  });
+
+  function updateGmailButtons() {
+    connectBtn.hidden = state.gmailConnected;
+    syncBtn.hidden = !state.gmailConnected;
+  }
+
+  function handleGmailRedirectParam() {
+    var params = new URLSearchParams(window.location.search);
+    var gmail = params.get("gmail");
+    if (!gmail) return;
+    var messages = {
+      connected: "Gmail connected — click Sync now to import transactions",
+      denied: "Gmail connection was cancelled",
+      state_mismatch: "Something went wrong connecting Gmail — try again",
+      missing_code: "Something went wrong connecting Gmail — try again",
+      no_refresh_token: "Revoke access at myaccount.google.com/permissions, then reconnect"
+    };
+    showToast(messages[gmail] || "Gmail connection updated");
+    params.delete("gmail");
+    var qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+  }
+
+  // ---------- bootstrap ----------
+  handleGmailRedirectParam();
+
+  Promise.all([fetchExpenses(), fetchPending(), api("/api/auth/status")])
+    .then(function (results) {
+      state.gmailConnected = !!(results[2] && results[2].connected);
+      updateGmailButtons();
+      render();
+    })
+    .catch(function (err) {
+      showToast("Couldn't load expenses: " + err.message);
+      updateGmailButtons();
+      render();
+    });
 })();
 </script>
