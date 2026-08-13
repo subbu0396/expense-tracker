@@ -127,6 +127,33 @@
     padding: 28px 24px 64px;
   }
 
+  /* ---------- iOS Safari nudge ---------- */
+  .ios-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 18px;
+    font-size: 12.5px;
+    color: var(--ink-secondary);
+  }
+  .ios-banner b { color: var(--accent); }
+  .ios-banner-close {
+    background: none;
+    border: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 12px;
+    flex: none;
+  }
+  .ios-banner-close:hover { color: var(--ink-primary); background: var(--surface-page); }
+
   /* ---------- Header ---------- */
   header {
     display: flex;
@@ -676,6 +703,11 @@
 </style>
 
 <div class="wrap">
+  <div class="ios-banner" id="iosBanner" hidden>
+    <span>On iOS, only <b>Safari</b> can install this as an app and receive budget alerts — open this page in Safari, then use <b>Add to Home Screen</b>.</span>
+    <button type="button" class="ios-banner-close" id="iosBannerClose" aria-label="Dismiss">✕</button>
+  </div>
+
   <header>
     <div class="brand">
       <div class="eyebrow">Spend Ledger</div>
@@ -1608,6 +1640,31 @@
       navigator.serviceWorker.register("/sw.js").catch(function () {});
     });
   }
+
+  // ---------- iOS Safari nudge ----------
+  // iOS only allows a real installable PWA (and Web Push) through Safari's
+  // own "Add to Home Screen" -- Chrome/Firefox/Edge on iOS are all forced
+  // onto Safari's engine but blocked from exposing that capability, and all
+  // three still carry "Safari" in their UA string, so detection has to look
+  // for the rival-browser token rather than the absence of "Safari".
+  (function () {
+    var IOS_BANNER_DISMISS_KEY = "spend-ledger-ios-banner-dismissed";
+    var ua = navigator.userAgent;
+    var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    var isNonSafari = /CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+
+    var dismissed = false;
+    try { dismissed = !!localStorage.getItem(IOS_BANNER_DISMISS_KEY); } catch (e) {}
+
+    if (isIOS && isNonSafari && !dismissed) {
+      document.getElementById("iosBanner").hidden = false;
+    }
+
+    document.getElementById("iosBannerClose").addEventListener("click", function () {
+      document.getElementById("iosBanner").hidden = true;
+      try { localStorage.setItem(IOS_BANNER_DISMISS_KEY, "1"); } catch (e) {}
+    });
+  })();
 
   // ---------- bootstrap ----------
   handleGmailRedirectParam();
