@@ -574,6 +574,43 @@
     line-height: 1;
   }
   .del-btn:hover { color: var(--danger); background: var(--danger-wash); }
+  .row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+  .edit-btn {
+    background: none;
+    border: none;
+    color: var(--ink-muted);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .edit-btn:hover { color: var(--accent); background: var(--surface-page); }
+
+  .edit-row td { padding: 8px 10px; background: var(--surface-page); }
+  .edit-row input, .edit-row select {
+    width: 100%;
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12.5px;
+  }
+  .edit-row .e-amt { text-align: right; }
+  .edit-row .row-actions { gap: 6px; }
+  .e-save, .e-cancel {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .e-save { background: var(--accent); color: var(--accent-ink); }
+  .e-save:hover { filter: brightness(1.06); }
+  .e-cancel { background: transparent; color: var(--ink-muted); border: 1px solid var(--border-strong); }
+  .e-cancel:hover { background: var(--surface-card); }
 
   .table-scroll { overflow-x: auto; }
   .empty-row td {
@@ -734,7 +771,8 @@
     activeMonth: "all",
     activeCategory: "all",
     search: "",
-    gmailConnected: false
+    gmailConnected: false,
+    editingId: null
   };
 
   function api(path, options) {
@@ -1130,6 +1168,8 @@
     }
 
     body.innerHTML = list.map(function (x) {
+      if (x.id === state.editingId) return renderEditRow(x);
+
       var cat = CAT_BY_ID[x.category];
       return (
         '<tr>' +
@@ -1137,10 +1177,20 @@
         '<td><span class="cat-pill"><span class="dot" style="background:var(' + cat.varc + ')"></span>' + cat.label + '</span></td>' +
         '<td class="note-cell">' + (x.note ? escapeHtml(x.note) : "—") + '</td>' +
         '<td class="num-col num">' + fmtMoney(x.amount) + '</td>' +
-        '<td class="num-col"><button class="del-btn" data-id="' + x.id + '" aria-label="Delete expense" title="Delete">✕</button></td>' +
+        '<td class="num-col"><div class="row-actions">' +
+        '<button class="edit-btn" data-id="' + x.id + '" aria-label="Edit expense" title="Edit">✎</button>' +
+        '<button class="del-btn" data-id="' + x.id + '" aria-label="Delete expense" title="Delete">✕</button>' +
+        '</div></td>' +
         '</tr>'
       );
     }).join("");
+
+    body.querySelectorAll(".edit-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        state.editingId = btn.getAttribute("data-id");
+        renderLedger();
+      });
+    });
 
     body.querySelectorAll(".del-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -1151,6 +1201,56 @@
           .then(render)
           .catch(function (err) { showToast("Couldn't delete: " + err.message); btn.disabled = false; });
       });
+    });
+
+    wireEditRow();
+  }
+
+  function renderEditRow(x) {
+    var options = CATEGORIES.map(function (c) {
+      return '<option value="' + c.id + '"' + (c.id === x.category ? " selected" : "") + '>' + c.label + '</option>';
+    }).join("");
+    return (
+      '<tr class="edit-row" data-id="' + x.id + '">' +
+      '<td><input type="date" class="e-date" value="' + x.date + '"></td>' +
+      '<td><select class="e-cat">' + options + '</select></td>' +
+      '<td><input type="text" class="e-note" value="' + escapeHtml(x.note || "") + '" maxlength="60"></td>' +
+      '<td class="num-col"><input type="number" step="0.01" min="0" class="e-amt" value="' + x.amount + '"></td>' +
+      '<td class="num-col"><div class="row-actions">' +
+      '<button type="button" class="e-save">Save</button>' +
+      '<button type="button" class="e-cancel">Cancel</button>' +
+      '</div></td>' +
+      '</tr>'
+    );
+  }
+
+  function wireEditRow() {
+    var row = document.querySelector(".edit-row");
+    if (!row) return;
+    var id = row.getAttribute("data-id");
+
+    row.querySelector(".e-cancel").addEventListener("click", function () {
+      state.editingId = null;
+      renderLedger();
+    });
+
+    row.querySelector(".e-save").addEventListener("click", function (e) {
+      var amount = parseFloat(row.querySelector(".e-amt").value);
+      var category = row.querySelector(".e-cat").value;
+      var note = row.querySelector(".e-note").value.trim();
+      var date = row.querySelector(".e-date").value;
+
+      if (!amount || amount <= 0) { showToast("Amount must be a positive number"); return; }
+      if (!date) { showToast("Date is required"); return; }
+
+      e.target.disabled = true;
+      api("/api/expenses/" + id, { method: "PATCH", body: JSON.stringify({ amount: amount, category: category, note: note, date: date }) })
+        .then(function () {
+          state.editingId = null;
+          return fetchExpenses();
+        })
+        .then(render)
+        .catch(function (err) { showToast("Couldn't save: " + err.message); e.target.disabled = false; });
     });
   }
 
