@@ -1,4 +1,5 @@
 const { sql } = require("../_db");
+const { checkAndAlert } = require("../_budgetAlerts");
 
 const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food", "upidebit"];
 
@@ -54,6 +55,8 @@ async function handlePost(req, res) {
     INSERT INTO expenses (id, amount, category, note, date, source, status)
     VALUES (${id}, ${amount}, ${category}, ${note}, ${date}, 'manual', 'confirmed')
   `;
+
+  await checkAndAlert(category);
 
   res.statusCode = 201;
   res.setHeader("Content-Type", "application/json");

@@ -1,4 +1,11 @@
 <title>Spend Ledger</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#2a78d6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Spend Ledger">
 <style>
   :root {
     color-scheme: light;
@@ -239,6 +246,45 @@
     border-radius: 999px;
   }
   .pending-hint { font-size: 12px; color: var(--ink-muted); margin: 0 0 14px; }
+
+  /* ---------- Budgets ---------- */
+  .budgets-card { margin-top: 20px; }
+  .budgets-hint { font-size: 12px; color: var(--ink-muted); margin: 0 0 14px; }
+  .budget-row {
+    display: grid;
+    grid-template-columns: 130px 110px 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--gridline);
+  }
+  .budget-row:last-child { border-bottom: none; }
+  .budget-cat { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .budget-cat .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .budget-limit-row {
+    display: flex;
+    align-items: center;
+    background: var(--surface-page);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .budget-limit-row span { padding: 0 0 0 8px; color: var(--ink-muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  .budget-limit-row input {
+    border: none;
+    background: transparent;
+    padding: 7px 8px 7px 4px;
+    width: 100%;
+    font-size: 12.5px;
+  }
+  .budget-limit-row input:focus-visible { outline: none; }
+  .budget-bar-wrap { display: flex; flex-direction: column; gap: 5px; }
+  .budget-bar-track { height: 7px; border-radius: 999px; background: var(--gridline); overflow: hidden; }
+  .budget-bar-fill { height: 100%; border-radius: 999px; transition: width 200ms ease; }
+  .budget-bar-fill.over { background: var(--danger) !important; }
+  .budget-bar-label { font-size: 11px; color: var(--ink-muted); display: flex; justify-content: space-between; gap: 8px; }
+  .budget-bar-label .over-text { color: var(--danger); font-weight: 700; }
+  .budget-bar-label .no-limit { font-style: italic; }
   .pending-row {
     display: grid;
     grid-template-columns: auto auto 1fr auto auto auto;
@@ -687,6 +733,15 @@
     <div class="trend-wrap" id="trendWrap"></div>
   </div>
 
+  <div class="card budgets-card">
+    <div class="pending-head">
+      <h2>Budgets</h2>
+      <button type="button" class="gmail-btn" id="enableAlertsBtn">Enable alerts</button>
+    </div>
+    <div class="budgets-hint">Set a monthly limit per category to get a push notification when you cross it.</div>
+    <div id="budgetsList"></div>
+  </div>
+
   <div class="card pending-card" id="pendingCard" hidden>
     <div class="pending-head">
       <h2>Pending review <span class="pending-count" id="pendingCount">0</span></h2>
@@ -772,7 +827,9 @@
     activeCategory: "all",
     search: "",
     gmailConnected: false,
-    editingId: null
+    editingId: null,
+    budgets: {},
+    pushEnabled: false
   };
 
   function api(path, options) {
@@ -794,6 +851,13 @@
   function fetchPending() {
     return api("/api/expenses?status=pending").then(function (list) {
       state.pending = list;
+    });
+  }
+
+  function fetchBudgets() {
+    return api("/api/budgets").then(function (list) {
+      state.budgets = {};
+      list.forEach(function (b) { state.budgets[b.category] = b.monthlyLimit; });
     });
   }
 
@@ -1254,6 +1318,124 @@
     });
   }
 
+  function thisMonthTotals() {
+    var thisMonth = monthKey(todayISO());
+    var totals = {};
+    CATEGORIES.forEach(function (c) { totals[c.id] = 0; });
+    state.expenses.forEach(function (x) {
+      if (monthKey(x.date) === thisMonth) totals[x.category] = (totals[x.category] || 0) + x.amount;
+    });
+    return totals;
+  }
+
+  function renderBudgets() {
+    var list = document.getElementById("budgetsList");
+    var totals = thisMonthTotals();
+
+    list.innerHTML = CATEGORIES.map(function (c) {
+      var limit = state.budgets[c.id];
+      var spent = totals[c.id] || 0;
+      var pct = limit ? Math.min(100, (spent / limit) * 100) : 0;
+      var over = limit && spent > limit;
+
+      var barLabel = limit
+        ? '<span class="' + (over ? "over-text" : "") + '">' + fmtMoney(spent) + ' of ' + fmtMoney(limit) + (over ? " — over" : "") + '</span><span>' + Math.round((spent / limit) * 100) + '%</span>'
+        : '<span class="no-limit">' + fmtMoney(spent) + ' spent this month</span><span class="no-limit">No limit set</span>';
+
+      return (
+        '<div class="budget-row" data-cat="' + c.id + '">' +
+        '<span class="budget-cat"><span class="dot" style="background:var(' + c.varc + ')"></span>' + c.label + '</span>' +
+        '<div class="budget-limit-row"><span>₹</span><input type="number" min="0" step="1" class="budget-limit-input" placeholder="No limit" value="' + (limit || "") + '"></div>' +
+        '<div class="budget-bar-wrap"><div class="budget-bar-track"><div class="budget-bar-fill' + (over ? " over" : "") + '" style="width:' + pct + '%;background:' + (over ? "" : "var(" + c.varc + ")") + '"></div></div><div class="budget-bar-label">' + barLabel + '</div></div>' +
+        '</div>'
+      );
+    }).join("");
+
+    list.querySelectorAll(".budget-limit-input").forEach(function (input) {
+      input.addEventListener("change", function () {
+        var row = input.closest(".budget-row");
+        var cat = row.getAttribute("data-cat");
+        var raw = input.value.trim();
+        var monthlyLimit = raw === "" ? null : parseFloat(raw);
+
+        input.disabled = true;
+        api("/api/budgets", { method: "PUT", body: JSON.stringify({ category: cat, monthlyLimit: monthlyLimit }) })
+          .then(function (res) {
+            if (res.monthlyLimit === null) delete state.budgets[cat];
+            else state.budgets[cat] = res.monthlyLimit;
+            renderBudgets();
+          })
+          .catch(function (err) { showToast("Couldn't save budget: " + err.message); })
+          .finally(function () { input.disabled = false; });
+      });
+    });
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    var padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    var base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+    for (var i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  function updateAlertsButton() {
+    var btn = document.getElementById("enableAlertsBtn");
+    if (state.pushEnabled) {
+      btn.textContent = "Alerts enabled";
+      btn.classList.add("primary");
+      btn.disabled = true;
+    } else {
+      btn.textContent = "Enable alerts";
+      btn.classList.remove("primary");
+      btn.disabled = false;
+    }
+  }
+
+  function enablePushAlerts() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      showToast("Push notifications aren't supported in this browser");
+      return;
+    }
+    var btn = document.getElementById("enableAlertsBtn");
+    btn.disabled = true;
+
+    Notification.requestPermission()
+      .then(function (permission) {
+        if (permission !== "granted") throw new Error("permission not granted");
+        return navigator.serviceWorker.ready;
+      })
+      .then(function (reg) {
+        return api("/api/push/public-key").then(function (r) {
+          if (!r.publicKey) throw new Error("push isn't configured on the server yet");
+          return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(r.publicKey) });
+        });
+      })
+      .then(function (sub) {
+        return api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+      })
+      .then(function () {
+        state.pushEnabled = true;
+        updateAlertsButton();
+        showToast("Budget alerts enabled");
+      })
+      .catch(function (err) {
+        showToast("Couldn't enable alerts: " + err.message);
+        updateAlertsButton();
+      });
+  }
+
+  function checkExistingPushSubscription() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return Promise.resolve();
+    return navigator.serviceWorker.ready
+      .then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (sub) { state.pushEnabled = !!sub; })
+      .catch(function () {});
+  }
+
+  document.getElementById("enableAlertsBtn").addEventListener("click", enablePushAlerts);
+
   function renderPending() {
     var card = document.getElementById("pendingCard");
     var list = document.getElementById("pendingList");
@@ -1332,6 +1514,7 @@
     renderHeader();
     renderBreakdown(filteredForMonth(state.activeMonth));
     renderTrend();
+    renderBudgets();
     renderPending();
     renderChips();
     renderLedger();
@@ -1419,18 +1602,27 @@
     window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
   }
 
+  // ---------- service worker ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/sw.js").catch(function () {});
+    });
+  }
+
   // ---------- bootstrap ----------
   handleGmailRedirectParam();
 
-  Promise.all([fetchExpenses(), fetchPending(), api("/api/auth/status")])
+  Promise.all([fetchExpenses(), fetchPending(), fetchBudgets(), api("/api/auth/status"), checkExistingPushSubscription()])
     .then(function (results) {
-      state.gmailConnected = !!(results[2] && results[2].connected);
+      state.gmailConnected = !!(results[3] && results[3].connected);
       updateGmailButtons();
+      updateAlertsButton();
       render();
     })
     .catch(function (err) {
       showToast("Couldn't load expenses: " + err.message);
       updateGmailButtons();
+      updateAlertsButton();
       render();
     });
 })();

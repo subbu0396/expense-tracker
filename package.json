@@ -5,6 +5,7 @@
   "description": "Spend Ledger expense tracker with Gmail auto-import",
   "dependencies": {
     "googleapis": "^144.0.0",
-    "@neondatabase/serverless": "^0.10.4"
+    "@neondatabase/serverless": "^0.10.4",
+    "web-push": "^3.6.7"
   }
 }

@@ -1,4 +1,5 @@
 const { sql } = require("../_db");
+const { checkAndAlert } = require("../_budgetAlerts");
 
 const CATEGORIES = ["travel", "creditcard", "groceries", "ott", "food", "upidebit"];
 
@@ -13,11 +14,12 @@ async function handlePatch(req, res, id) {
   const body = req.body || {};
   const db = sql();
 
-  const existingRows = await db`SELECT id FROM expenses WHERE id = ${id}`;
+  const existingRows = await db`SELECT id, category, status FROM expenses WHERE id = ${id}`;
   if (existingRows.length === 0) {
     res.statusCode = 404;
     return res.end(JSON.stringify({ error: "not found" }));
   }
+  const existing = existingRows[0];
 
   if (body.status === "rejected") {
     await db`UPDATE expenses SET status = 'rejected' WHERE id = ${id}`;
@@ -45,6 +47,12 @@ async function handlePatch(req, res, id) {
       status = COALESCE(${nextStatus}, status)
     WHERE id = ${id}
   `;
+
+  const finalStatus = nextStatus || existing.status;
+  const finalCategory = category || existing.category;
+  if (finalStatus === "confirmed") {
+    await checkAndAlert(finalCategory);
+  }
 
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify({ id, ok: true }));
