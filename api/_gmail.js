@@ -22,7 +22,7 @@ function getAuthUrl(state) {
   });
 }
 
-async function saveTokens(tokens) {
+async function saveTokens(userId, tokens) {
   const db = sql();
   const refreshEnc = tokens.refresh_token ? encrypt(tokens.refresh_token) : undefined;
   const accessEnc = tokens.access_token ? encrypt(tokens.access_token) : null;
@@ -30,9 +30,9 @@ async function saveTokens(tokens) {
 
   if (refreshEnc) {
     await db`
-      INSERT INTO oauth_tokens (id, refresh_token, access_token, access_token_expiry, updated_at)
-      VALUES (1, ${refreshEnc}, ${accessEnc}, ${expiry}, now())
-      ON CONFLICT (id) DO UPDATE SET
+      INSERT INTO oauth_tokens (user_id, refresh_token, access_token, access_token_expiry, updated_at)
+      VALUES (${userId}, ${refreshEnc}, ${accessEnc}, ${expiry}, now())
+      ON CONFLICT (user_id) DO UPDATE SET
         refresh_token = EXCLUDED.refresh_token,
         access_token = EXCLUDED.access_token,
         access_token_expiry = EXCLUDED.access_token_expiry,
@@ -43,28 +43,34 @@ async function saveTokens(tokens) {
     await db`
       UPDATE oauth_tokens
       SET access_token = ${accessEnc}, access_token_expiry = ${expiry}, updated_at = now()
-      WHERE id = 1
+      WHERE user_id = ${userId}
     `;
   }
 }
 
-async function loadTokenRow() {
+async function loadTokenRow(userId) {
   const db = sql();
-  const rows = await db`SELECT refresh_token, access_token, access_token_expiry FROM oauth_tokens WHERE id = 1`;
+  const rows = await db`SELECT refresh_token, access_token, access_token_expiry FROM oauth_tokens WHERE user_id = ${userId}`;
   return rows[0] || null;
 }
 
-async function isConnected() {
-  const row = await loadTokenRow();
+async function isConnected(userId) {
+  const row = await loadTokenRow(userId);
   return !!(row && row.refresh_token);
+}
+
+async function connectedUserIds() {
+  const db = sql();
+  const rows = await db`SELECT user_id FROM oauth_tokens WHERE refresh_token IS NOT NULL`;
+  return rows.map((r) => r.user_id);
 }
 
 /**
  * Returns an authenticated OAuth2 client with credentials set, refreshing
  * (and persisting) the access token as needed. Throws if not connected.
  */
-async function getAuthorizedClient() {
-  const row = await loadTokenRow();
+async function getAuthorizedClient(userId) {
+  const row = await loadTokenRow(userId);
   if (!row || !row.refresh_token) {
     const err = new Error("Gmail not connected");
     err.code = "NOT_CONNECTED";
@@ -79,7 +85,7 @@ async function getAuthorizedClient() {
   });
 
   client.on("tokens", (tokens) => {
-    saveTokens(tokens).catch(() => {});
+    saveTokens(userId, tokens).catch(() => {});
   });
 
   // Force a refresh if we have no cached access token or it's expired/near-expiry.
@@ -87,7 +93,7 @@ async function getAuthorizedClient() {
   if (!row.access_token || Date.now() > expiry - 60000) {
     const { credentials } = await client.refreshAccessToken();
     client.setCredentials(credentials);
-    await saveTokens(credentials);
+    await saveTokens(userId, credentials);
   }
 
   return client;
@@ -97,4 +103,4 @@ function getGmailClient(authClient) {
   return google.gmail({ version: "v1", auth: authClient });
 }
 
-module.exports = { getOAuthClient, getAuthUrl, saveTokens, isConnected, getAuthorizedClient, getGmailClient, SCOPES };
+module.exports = { getOAuthClient, getAuthUrl, saveTokens, isConnected, connectedUserIds, getAuthorizedClient, getGmailClient, SCOPES };

@@ -710,6 +710,7 @@
     background: var(--surface-page);
     padding: 24px;
   }
+  .login-screen[hidden] { display: none; }
   .login-card {
     background: var(--surface-card);
     border: 1px solid var(--border);
@@ -1697,7 +1698,8 @@
       denied: "Gmail connection was cancelled",
       state_mismatch: "Something went wrong connecting Gmail — try again",
       missing_code: "Something went wrong connecting Gmail — try again",
-      no_refresh_token: "Revoke access at myaccount.google.com/permissions, then reconnect"
+      no_refresh_token: "Revoke access at myaccount.google.com/permissions, then reconnect",
+      login_required: "Sign in first, then connect Gmail"
     };
     showToast(messages[gmail] || "Gmail connection updated");
     params.delete("gmail");

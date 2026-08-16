@@ -1,6 +1,7 @@
 const { sql } = require("./_db");
-const { getAuthorizedClient, getGmailClient } = require("./_gmail");
+const { getAuthorizedClient, getGmailClient, connectedUserIds } = require("./_gmail");
 const { parseEmail, GMAIL_SEARCH_QUERY } = require("./_parsers");
+const { getSessionUser } = require("./_session");
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -49,8 +50,8 @@ function extractFromAddress(fromHeader) {
   return m ? m[1] : (fromHeader || "");
 }
 
-async function runSync(sinceOverride) {
-  const authClient = await getAuthorizedClient();
+async function runSync(userId, sinceOverride) {
+  const authClient = await getAuthorizedClient(userId);
   const gmail = getGmailClient(authClient);
   const db = sql();
 
@@ -58,7 +59,7 @@ async function runSync(sinceOverride) {
   if (sinceOverride) {
     afterDate = sinceOverride;
   } else {
-    const stateRows = await db`SELECT last_synced_at FROM sync_state WHERE id = 1`;
+    const stateRows = await db`SELECT last_synced_at FROM sync_state WHERE user_id = ${userId}`;
     const lastSyncedAt = stateRows[0] && stateRows[0].last_synced_at;
     afterDate = lastSyncedAt ? new Date(lastSyncedAt) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   }
@@ -80,7 +81,7 @@ async function runSync(sinceOverride) {
     const messages = listRes.data.messages || [];
 
     for (const msgRef of messages) {
-      const existing = await db`SELECT id FROM expenses WHERE gmail_message_id = ${msgRef.id}`;
+      const existing = await db`SELECT id FROM expenses WHERE user_id = ${userId} AND gmail_message_id = ${msgRef.id}`;
       if (existing.length > 0) continue;
 
       const full = await gmail.users.messages.get({ userId: "me", id: msgRef.id, format: "full" });
@@ -97,9 +98,9 @@ async function runSync(sinceOverride) {
       }
 
       await db`
-        INSERT INTO expenses (id, amount, category, note, date, source, status, gmail_message_id, raw_snippet)
-        VALUES (${uid()}, ${parsed.amount}, ${parsed.category}, ${parsed.note}, ${parsed.date}, 'gmail', 'pending', ${msgRef.id}, ${parsed.snippet})
-        ON CONFLICT (gmail_message_id) DO NOTHING
+        INSERT INTO expenses (id, amount, category, note, date, source, status, gmail_message_id, raw_snippet, user_id)
+        VALUES (${uid()}, ${parsed.amount}, ${parsed.category}, ${parsed.note}, ${parsed.date}, 'gmail', 'pending', ${msgRef.id}, ${parsed.snippet}, ${userId})
+        ON CONFLICT (user_id, gmail_message_id) DO NOTHING
       `;
       added++;
     }
@@ -108,11 +109,25 @@ async function runSync(sinceOverride) {
   } while (pageToken);
 
   await db`
-    INSERT INTO sync_state (id, last_synced_at) VALUES (1, now())
-    ON CONFLICT (id) DO UPDATE SET last_synced_at = now()
+    INSERT INTO sync_state (user_id, last_synced_at) VALUES (${userId}, now())
+    ON CONFLICT (user_id) DO UPDATE SET last_synced_at = now()
   `;
 
   return { added, skipped };
+}
+
+async function runSyncForAllUsers(sinceOverride) {
+  const userIds = await connectedUserIds();
+  const results = [];
+  for (const userId of userIds) {
+    try {
+      const result = await runSync(userId, sinceOverride);
+      results.push({ userId, ...result });
+    } catch (e) {
+      results.push({ userId, error: e.message });
+    }
+  }
+  return results;
 }
 
 function isAuthorizedCronCall(req) {
@@ -146,7 +161,20 @@ module.exports = async (req, res) => {
       sinceOverride = parsed;
     }
 
-    const result = await runSync(sinceOverride);
+    if (req.method === "GET") {
+      const results = await runSyncForAllUsers(sinceOverride);
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ results }));
+    }
+
+    const userId = getSessionUser(req);
+    if (!userId) {
+      res.statusCode = 401;
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ error: "unauthorized" }));
+    }
+
+    const result = await runSync(userId, sinceOverride);
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(result));
   } catch (e) {

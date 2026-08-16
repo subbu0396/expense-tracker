@@ -1,16 +1,24 @@
 const crypto = require("crypto");
 const { getAuthUrl } = require("../_gmail");
+const { getSessionUser } = require("../_session");
 
-function signState(nonce) {
+function signState(nonce, userId) {
   const secret = process.env.OAUTH_STATE_SECRET || "";
-  const sig = crypto.createHmac("sha256", secret).update(nonce).digest("hex");
-  return `${nonce}.${sig}`;
+  const payload = `${nonce}.${userId}`;
+  const sig = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return `${payload}.${sig}`;
 }
 
 module.exports = async (req, res) => {
   try {
+    const userId = getSessionUser(req);
+    if (!userId) {
+      res.writeHead(302, { Location: "/?gmail=login_required" });
+      return res.end();
+    }
+
     const nonce = crypto.randomBytes(16).toString("hex");
-    const state = signState(nonce);
+    const state = signState(nonce, userId);
 
     res.setHeader(
       "Set-Cookie",

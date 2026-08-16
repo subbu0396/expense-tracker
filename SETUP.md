@@ -107,10 +107,25 @@ works correctly while you're still the only account in the system.
 8. Once that's confirmed, run `migrations/006_enforce_user_id.sql` — this
    locks in the per-user constraints now that every row has an owner.
 
-Gmail sync itself is **not** part of this step yet — it's still tied to your
-original single account (`oauth_tokens`/`sync_state` are untouched). Per-user
-Gmail connections are a follow-up phase once this login/isolation layer is
-verified solid.
+Gmail sync itself was **not** part of this step — see "Per-user Gmail
+connections" below for that follow-up phase.
+
+## 7. Per-user Gmail connections
+
+Gmail auto-import now works per-signed-in-user instead of being tied to a
+single original account.
+
+1. Run `migrations/007_gmail_per_user.sql` once in Neon's SQL editor. It's
+   additive/backfilling (like `005`), so it's safe to run any time — no
+   ordering constraint like step 6 above had.
+2. No Google Cloud Console changes needed — the Gmail OAuth client and
+   redirect URI are unchanged, tokens are just scoped per user now. Each
+   user does still need to be added under **OAuth consent screen -> Test
+   users** before they can grant the `gmail.readonly` scope, same
+   restriction sign-in already has (see step 2 above).
+3. Each user (including you) uses the existing **Connect Gmail** button
+   after signing in, independently. **Sync now** (and the daily cron) only
+   touch that user's own expenses.
 
 **On going fully public later**: Gmail auto-import uses the sensitive
 `gmail.readonly` scope, so before random members of the public can connect

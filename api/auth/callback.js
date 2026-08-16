@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { getOAuthClient, saveTokens } = require("../_gmail");
+const { getSessionUser } = require("../_session");
 
 function parseCookies(header) {
   const out = {};
@@ -11,17 +12,19 @@ function parseCookies(header) {
   return out;
 }
 
+// Returns the userId embedded in the state if it's valid, otherwise null.
 function verifyState(state, cookieState) {
-  if (!state || !cookieState || state !== cookieState) return false;
-  const [nonce, sig] = state.split(".");
-  if (!nonce || !sig) return false;
+  if (!state || !cookieState || state !== cookieState) return null;
+  const [nonce, userId, sig] = state.split(".");
+  if (!nonce || !userId || !sig) return null;
   const secret = process.env.OAUTH_STATE_SECRET || "";
-  const expected = crypto.createHmac("sha256", secret).update(nonce).digest("hex");
+  const expected = crypto.createHmac("sha256", secret).update(`${nonce}.${userId}`).digest("hex");
   try {
-    return crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   } catch (e) {
-    return false;
+    return null;
   }
+  return userId;
 }
 
 module.exports = async (req, res) => {
@@ -38,8 +41,17 @@ module.exports = async (req, res) => {
       res.writeHead(302, { Location: "/?gmail=denied" });
       return res.end();
     }
-    if (!verifyState(state, cookies.sl_oauth_state)) {
+    const stateUserId = verifyState(state, cookies.sl_oauth_state);
+    if (!stateUserId) {
       res.writeHead(302, { Location: "/?gmail=state_mismatch" });
+      return res.end();
+    }
+    // Cross-check the state's userId against the current session -- covers
+    // the edge case of a session change mid-flow (e.g. signed out and a
+    // different account signed in while the OAuth dance was in flight).
+    const sessionUserId = getSessionUser(req);
+    if (!sessionUserId || sessionUserId !== stateUserId) {
+      res.writeHead(302, { Location: "/?gmail=login_required" });
       return res.end();
     }
     if (!code) {
@@ -58,7 +70,7 @@ module.exports = async (req, res) => {
       return res.end();
     }
 
-    await saveTokens(tokens);
+    await saveTokens(sessionUserId, tokens);
 
     res.writeHead(302, { Location: "/?gmail=connected" });
     res.end();
