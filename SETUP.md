@@ -127,10 +127,36 @@ single original account.
    after signing in, independently. **Sync now** (and the daily cron) only
    touch that user's own expenses.
 
-**On going fully public later**: Gmail auto-import uses the sensitive
-`gmail.readonly` scope, so before random members of the public can connect
-Gmail without hitting Google's "unverified app" warning, the OAuth consent
-screen needs to go through Google's app verification review (a privacy policy
-page, an app homepage, and a manual review that can take days to weeks). That
-submission is something only you can do from your Google Cloud account — happy
-to draft the privacy policy page when you're ready for that step.
+## 8. Going public: full Google OAuth verification
+
+`privacy.html` and `terms.html` are now in the repo (linked from the footer
+of both the login screen and the signed-in app) — Google's verification
+review requires a public privacy policy and app homepage, which these
+provide. The rest is manual, in the Google Cloud Console:
+
+1. **OAuth consent screen** -> fill in app name/logo, **Privacy Policy
+   link**: `https://expense-tracker-nine-self-90.vercel.app/privacy.html`,
+   **App homepage link**: `https://expense-tracker-nine-self-90.vercel.app/`,
+   and optionally the Terms link (`/terms.html`).
+2. **Domain verification**: Google requires the homepage/privacy-policy
+   domain to be verified in
+   [Search Console](https://search.google.com/search-console). `*.vercel.app`
+   itself is on the public suffix list, so you can't verify the whole
+   `vercel.app` domain — but you *can* verify your specific
+   `expense-tracker-nine-self-90.vercel.app` URL as a Search Console
+   "URL prefix" property (HTML-file or meta-tag verification). That's
+   enough for the consent screen's domain check.
+3. **Publish to Production** on the consent screen. This alone opens
+   sign-in (and the non-sensitive `openid`/`email`/`profile` scopes) to any
+   Google account — no more test-user allowlist for basic login.
+4. **Submit for verification** of the `gmail.readonly` scope: explain why
+   it's needed (parsing bank/card/OTT transaction emails into expense
+   entries) and record a short screen capture showing: sign in -> Connect
+   Gmail -> Google's consent screen -> Sync now -> the pending-review queue
+   where a user checks each parsed expense before it's confirmed. Review
+   can take days to weeks and may come back with follow-up questions from
+   Google — worth checking email during that window.
+5. **Until verification finishes**, connecting Gmail shows Google's
+   "unverified app" warning for anyone who isn't a listed test user (they
+   can still click through "Advanced -> Go to Spend Ledger (unsafe)" to
+   proceed) — sign-in itself is unaffected once published to Production.

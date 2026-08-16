@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Spend Ledger</title>
+<link rel="icon" href="/icons/icon-192.png">
+<style>
+  :root {
+    color-scheme: light;
+    --surface-page:  #f9f9f7;
+    --surface-card:  #fcfcfb;
+    --ink-primary:   #0b0b0b;
+    --ink-secondary: #52514e;
+    --ink-muted:     #898781;
+    --border:        rgba(11,11,11,0.10);
+    --accent:        #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-page:  #0d0d0d;
+      --surface-card:  #1a1a19;
+      --ink-primary:   #ffffff;
+      --ink-secondary: #c3c2b7;
+      --ink-muted:     #898781;
+      --border:        rgba(255,255,255,0.10);
+      --accent:        #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--surface-page);
+    color: var(--ink-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; padding: 40px 24px 80px; }
+  .eyebrow {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 8px;
+  }
+  h1 { margin: 0 0 6px; font-size: 26px; font-weight: 700; letter-spacing: -0.01em; }
+  .updated { font-size: 13px; color: var(--ink-muted); margin-bottom: 32px; }
+  .card {
+    background: var(--surface-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px 28px 8px;
+  }
+  h2 { font-size: 15px; font-weight: 700; margin: 0 0 10px; }
+  p, li { font-size: 14px; line-height: 1.65; color: var(--ink-secondary); }
+  section { margin-bottom: 24px; }
+  ul { margin: 0 0 16px; padding-left: 20px; }
+  a { color: var(--accent); }
+  .back { display: inline-block; margin-bottom: 24px; font-size: 13px; color: var(--ink-muted); text-decoration: none; }
+  .back:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&larr; Back to Spend Ledger</a>
+  <div class="eyebrow">Spend Ledger</div>
+  <h1>Privacy Policy</h1>
+  <div class="updated">Last updated August 16, 2026</div>
+
+  <div class="card">
+    <section>
+      <h2>What Spend Ledger is</h2>
+      <p>Spend Ledger is a personal expense tracker. You sign in with your Google
+      account to keep your own private ledger, and can optionally connect your
+      Gmail account so the app can automatically detect bank, card, and OTT
+      subscription transaction emails and turn them into expense entries for
+      you to review.</p>
+    </section>
+
+    <section>
+      <h2>Information we collect</h2>
+      <ul>
+        <li><strong>Account info:</strong> when you sign in with Google, we
+        receive your email address, name, and profile picture to create your
+        account and identify you within the app.</li>
+        <li><strong>Gmail data (only if you connect Gmail):</strong> with your
+        explicit consent, we request read-only (<code>gmail.readonly</code>)
+        access to your Gmail. We use it to run a narrow, specific search for
+        emails that look like bank/card transaction alerts or OTT receipts
+        (e.g. from known bank and merchant senders) — we do not browse your
+        inbox generally, and we never send, delete, label, or modify any
+        email. For each matched email we extract the amount, a category
+        guess, the date, and a short snippet of the relevant text so you can
+        review it before it's added to your ledger.</li>
+        <li><strong>Expense &amp; budget data:</strong> expenses you enter
+        manually, expenses imported from Gmail (once you confirm them),
+        per-category monthly budgets, and push-notification subscription
+        details if you enable budget alerts.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>How we use your information</h2>
+      <p>Solely to operate Spend Ledger for you: authenticate you, show your
+      own expenses and budgets, parse transaction emails into pending entries
+      for your review, and send you a push notification if a category goes
+      over its budget. We do not use your data for advertising, and we do not
+      build any kind of profile beyond what's needed to run the app.</p>
+    </section>
+
+    <section>
+      <h2>Sharing</h2>
+      <p>We do not sell, rent, or share your data with third parties. Your
+      data is never used to train AI/ML models. The only external service
+      involved is Google, for sign-in and (if you opt in) reading matching
+      Gmail messages — Spend Ledger's own servers and database are the only
+      place your data is stored.</p>
+    </section>
+
+    <section>
+      <h2>Data storage &amp; security</h2>
+      <p>Your data is stored in a private database associated with this app.
+      Gmail OAuth tokens are encrypted at rest (AES-256-GCM) and are never
+      stored or transmitted in plain text. Each user's data is isolated —
+      one account cannot see another account's expenses, budgets, or Gmail
+      connection.</p>
+    </section>
+
+    <section>
+      <h2>Data retention &amp; deletion</h2>
+      <p>We keep your data for as long as your account is active. You can
+      disconnect Gmail access at any time from
+      <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>,
+      which immediately stops any further email access. To request deletion
+      of your account and all associated data, email us at the address
+      below — we'll delete it within a reasonable time.</p>
+    </section>
+
+    <section>
+      <h2>Children's privacy</h2>
+      <p>Spend Ledger is not directed at children under 13, and we do not
+      knowingly collect information from them.</p>
+    </section>
+
+    <section>
+      <h2>Changes to this policy</h2>
+      <p>If this policy changes, we'll update the "Last updated" date above.
+      Continued use of the app after a change means you accept the updated
+      policy.</p>
+    </section>
+
+    <section>
+      <h2>Contact</h2>
+      <p>Questions, data requests, or deletion requests:
+      <a href="mailto:subramanyamc09@gmail.com">subramanyamc09@gmail.com</a></p>
+    </section>
+  </div>
+</div>
+</body>
+</html>
